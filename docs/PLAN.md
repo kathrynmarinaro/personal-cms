@@ -114,10 +114,12 @@ personal-cms/
     vendor/PHPMailer/           NEW  — 3 vendored files (§7.1)
   public/
     .htaccess (via root shim)
-    index.php                   Dashboard
+    index.php                   Dashboard ("Today" tab)
     people.php                  People list
     person.php                  Person profile (?id=)
-    add.php                     Add person + vCard upload + draft review
+    add.php                     Add one person, manually
+    import.php                  vCard upload + draft review (reached from the menu)
+    cron.php                    NEW — token-gated cron fallback (§7.2)
     login.php / logout.php      ported
     api/
       person-*.php  tag-*.php  gift-*.php  contact-*.php
@@ -125,6 +127,7 @@ personal-cms/
     assets/
       styles.css                ported VERBATIM
       api.js  swipe.js  inline-edit.js  reorder.js   ported
+      menu.js                                        NEW — hamburger sheet
       dashboard.js  people.js  person.js  import.js  NEW
   uploads/
     .htaccess                   NEW — deny all (§6.4)
@@ -148,13 +151,35 @@ Three tabs, matching the house pattern (`page_foot()` renders the bar):
 |---|---|---|
 | **Today** | `index.php` | Due today / overdue / this week. Reach-outs and birthdays interleaved, each row a link to the profile with a 1-tap "Logged today" button inline. Empty state: "Nobody to reach out to this week." |
 | **People** | `people.php` | Searchable list, grouped by relationship tag using `.cat-group`. `.row-sub` shows "last contacted N days ago" or "never". |
-| **Add** | `add.php` | Manual add form, plus the vCard upload and the draft-review queue. |
+| **Add** | `add.php` | Manual add form for one person. |
 
 Leftmost tab is the one opened daily, following Grocery's reasoning (thumb
 position) — that is **Today**.
 
 The person profile (`person.php?id=`) is not a tab; it is pushed from People or
 Today, and marks the tab it came from active.
+
+### The hamburger menu
+
+App-level actions that are not day-to-day live behind a hamburger in the heading
+row, matching the Inspiration Gallery and Book Tracker (where it is how you reach
+export). It is an `.icon-btn` in `screen_head()`'s `$asideHtml` slot, opening the
+`.sheet` bottom picker — **which is already in the stylesheet being ported
+verbatim**, so this costs no new CSS.
+
+v1 items: **Import contacts** → `import.php`, and **Sign out**. A future export
+action has an obvious home, which is the point of establishing the pattern now
+rather than inventing a second one later.
+
+`public/assets/menu.js` is a new shared module, generic and callback-driven like
+the other three, and added to `SHARED_MODULES` so `shared_module_map()`
+cache-busts it. `page_menu()` in `lib/layout.php` renders it, so every screen
+gets the same menu without repeating markup.
+
+**Import is therefore its own screen (`public/import.php`), not part of `add.php`
+and not a tab.** It is a task you do once, occasionally repeated; a tab would
+permanently spend a quarter of the bar on it, and burying it inside Add would
+make it undiscoverable.
 
 ---
 
@@ -404,10 +429,10 @@ The most involved new component, and the one most likely to be underestimated.
 
 ### 6.1 The flow
 
-1. `add.php` → upload a `.vcf`.
+1. Hamburger menu → **Import contacts** → `import.php` → upload a `.vcf`.
 2. `import-upload.php` streams and parses it into `import_drafts` under a new
    `import_batches` row. **No `people` row is created.**
-3. `add.php` shows the draft queue: each draft is a `.list-row` with the parsed
+3. `import.php` shows the draft queue: each draft is a `.list-row` with the parsed
    name, a `.row-sub` of "phone · email", a duplicate flag if any, and tag pills.
 4. Per draft: **Add** (promote to `people`), **Skip** (delete the draft), or tap
    to edit fields first. Swipe-to-delete + undo = Skip, reusing `swipe.js`.
@@ -698,23 +723,20 @@ these go into `CLAUDE.md` when it is written.
 
 ---
 
-## 11. Open questions
+## 11. Decisions — settled
 
-Four things I would rather you decide than have me assume. None of them block
-Phase 0 or Phase 1, so work can start regardless.
+All four open questions were answered before Phase 0 finished.
 
-1. **Timezone.** I have assumed `America/Chicago` throughout. If that is wrong
-   it is a one-line config change, but every date in the app depends on it.
-2. **Where reminder emails go.** Assumed: one fixed address in config, same as
-   the SMTP account. Confirm it is the address you actually read on your phone.
-3. **The third tab.** I have proposed **Today · People · Add**, with the vCard
-   import living inside Add. The alternative is Import as its own tab, which is
-   more discoverable but permanently spends a third of the tab bar on a one-time
-   task. Worth a moment's thought since changing it later means moving screens.
-4. **PHPMailer vs hand-rolled SMTP** (§7.1). My recommendation is vendoring the
-   three PHPMailer files; it does not break the no-build-step rule. Say the word
-   if you would rather the app had zero third-party code, and I will write the
-   SMTP client instead.
+1. **Timezone: `America/Chicago`.** Set once in `config.php`, applied to PHP and
+   to the MySQL connection (§5).
+2. **Reminder emails go to `kathrynmarinaro@gmail.com`**, which is also the SMTP
+   sending account. Sender and recipient being the same Gmail account is the
+   simplest setup and sidesteps the From-rewriting failure in §7.1.
+3. **Tabs: Today · People · Add. Import lives in the hamburger menu** (§3),
+   following the Inspiration Gallery and Book Tracker, where the menu is how you
+   reach export. Import is its own screen, `public/import.php`.
+4. **SMTP: vendor PHPMailer** (§7.1) — three plain PHP files, no Composer, no
+   build step.
 
 ---
 
