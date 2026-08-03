@@ -1,0 +1,1000 @@
+/* ============ Design tokens (shared with the Workout Generator, Print Cost
+ *              and the Inspiration Gallery) ============
+ *
+ * Same palette and geometry as the sibling apps — this is the house system,
+ * not a per-app choice. Change a token here only if it's changing in all of
+ * them. Copied verbatim from the Workout Generator.
+ */
+:root {
+  --teal:      #41b7ab;
+  --teal-dark: #369a90; /* accessible teal for text-on-white */
+  --slate:     #515a60;
+  --bg:        #ffffff;
+  --border:    #dddddd;
+  --ink:       #222222;
+  --black:     #000000;
+  --teal-tint: #e8f6f4;
+  --error:     #c05252;
+
+  --surface:   #ffffff;
+  --text:      var(--slate);
+  --heading:   var(--slate);
+
+  --radius: 10px;
+  --tap: 48px;
+  --maxw: 620px;
+  --font: "Avenir Next", Avenir, "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Pin to light so iOS doesn't auto-darken inputs and scrollbars for people
+     whose phone is in dark mode. */
+  color-scheme: light;
+}
+
+/* Deliberately light-only, matching the siblings.
+ *
+ * NOTE FOR ANYONE PORTING MORE CSS FROM THE GALLERY: that app pins
+ * html,body { overflow:hidden; touch-action:none } because it's a full-bleed
+ * pannable WebGL canvas. Do NOT bring that here. Three of this app's screens
+ * are scrolling lists, and those two rules would make every row below the fold
+ * unreachable — and would kill the swipe gestures outright.
+ */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+
+[hidden] { display: none !important; }
+.hidden { display: none !important; }
+.muted { color: var(--slate); opacity: 0.7; font-weight: 400; }
+.hint { font-size: 0.82rem; color: var(--slate); opacity: 0.75; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ============ Layout ============ */
+
+/* The centred column. Bottom padding clears the fixed tab bar plus the
+   iPhone home-indicator inset. */
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 18px) 18px
+           calc(var(--safe-bottom) + var(--tap) + 34px);
+}
+
+/* Signature divider — a 2px teal rule under headings. */
+.screen-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 2px solid var(--teal);
+  padding-bottom: 10px;
+  margin: 4px 0 20px;
+}
+h1 { font-size: 1.7rem; font-weight: 500; margin: 0; color: var(--heading); letter-spacing: 0.2px; }
+h2 { font-size: 1.1rem; font-weight: 600; margin: 26px 0 10px; color: var(--heading); }
+.rule { border: 0; border-top: 2px solid var(--teal); margin: 28px 0 18px; }
+
+.stack { display: grid; gap: 14px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* Heading row actions. Sits in the heading row rather than floating over the
+   page, so it can never overlap content. */
+.head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* ============ Bottom tab bar ============ */
+
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+  z-index: 20;
+}
+.tabbar a {
+  flex: 1;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--slate);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+.tabbar a.is-active { color: var(--teal-dark); border-top-color: var(--teal); }
+
+/* ============ Sheet (menus, pickers) ============
+ *
+ * Ported from the Inspiration Gallery, same markup and behaviour: a bottom
+ * sheet on a phone, a centred dialog once there's room. Bottom-anchored because
+ * that's where your thumb is — a menu that drops from the top corner it was
+ * tapped in is a desktop habit.
+ *
+ * The Grocery tab's category picker is expected to use this. */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.sheet-panel {
+  background: var(--bg);
+  width: 100%;
+  max-width: var(--maxw);
+  border-radius: 16px 16px 0 0;
+  display: grid;
+  gap: 2px;
+  padding: 16px 16px calc(20px + var(--safe-bottom));
+
+  /* The category sheet is ten rows tall and the archive-move sheet could grow.
+     Without this, a sheet taller than the viewport puts its last option — which
+     is always Cancel — permanently off-screen. */
+  max-height: 80vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (min-width: 620px) {
+  .sheet { align-items: center; }
+  .sheet-panel { border-radius: 16px; }
+}
+
+.sheet-panel button,
+.sheet-panel a {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--heading);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+.sheet-panel button:hover,
+.sheet-panel a:hover { border-color: var(--teal); color: var(--teal-dark); }
+.sheet-panel button.is-current {
+  border-color: var(--teal);
+  background: var(--teal-tint);
+  color: var(--teal-dark);
+}
+.sheet-cancel {
+  justify-content: center;
+  color: var(--slate) !important;
+  margin-top: 8px;
+}
+
+/* ============ Fields ============ */
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span, .label { font-size: 0.95rem; font-weight: 400; color: var(--heading); }
+
+.field input, .field textarea, .field select, .input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  width: 100%;
+  appearance: none;
+}
+.field input, .field select, .input { min-height: var(--tap); padding: 0 14px; }
+.field textarea { resize: vertical; line-height: 1.5; }
+
+.field input:focus, .field textarea:focus, .field select:focus, .input:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+  border-color: var(--teal);
+}
+.field-err { font-size: 0.82rem; color: var(--error); min-height: 1em; }
+
+/* ============ Buttons ============ */
+
+/* These work on <a> as well as <button>. Cross-screen navigation would otherwise
+   need a <form method="get"> wrapper just to get a styled control, since an
+   anchor arrives underlined, inline, and not centred. */
+.btn-primary, .btn-secondary, .btn-danger {
+  min-height: var(--tap);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  padding: 0 18px;
+  font-weight: 600;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+.btn-primary { background: var(--teal); color: #fff; }
+.btn-primary:hover { background: var(--teal-dark); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-secondary, .btn-ghost {
+  min-height: var(--tap);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--heading);
+  border: 1px solid var(--border);
+  padding: 0 18px;
+  font-weight: 600;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-secondary:hover, .btn-ghost:hover { border-color: var(--teal); color: var(--teal-dark); }
+.btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-danger { background: var(--surface); color: var(--error); border-color: var(--error); }
+.btn-danger:hover { background: var(--error); color: #fff; }
+
+/* Underlined text action.
+ *
+ * The 48px minimum is unconditional. In a sibling it was inherited only from
+ * one container, so the same class rendered a 24px target everywhere else —
+ * half the minimum, on shipped screens, invisible unless measured. A tap target
+ * is a property of the control, not of where it happens to be sitting. */
+.link-btn, .tap-text {
+  background: none; border: 0; padding: 0;
+  color: var(--slate); font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+.link-btn:hover, .tap-text:hover { color: var(--teal-dark); text-decoration-color: var(--teal); }
+.tap-text.danger { color: var(--error); }
+
+.icon-btn {
+  width: var(--tap);
+  height: var(--tap);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--heading);
+  padding: 0;
+}
+.icon-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
+.icon-btn.is-danger { color: var(--error); border-color: var(--border); }
+.icon-btn.is-danger:hover { border-color: var(--error); background: var(--error); color: #fff; }
+.icon-btn svg {
+  width: 22px; height: 22px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ============ Login ============ */
+
+.login-body { display: grid; place-items: center; min-height: 100vh; padding: 24px; }
+.login-card { width: 100%; max-width: 340px; }
+.login-title {
+  font-size: 1.7rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--heading);
+  margin: 0 0 10px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--teal);
+}
+.login-form { display: grid; gap: 14px; margin-top: 20px; }
+.login-form .btn-primary { width: 100%; }
+.login-error { margin: 0; color: var(--error); font-size: 0.85rem; }
+
+/* ============ Cards, pills, empty states ============ */
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px;
+}
+.card + .card { margin-top: 10px; }
+
+/* The Want to Buy intro is the one card in the app holding prose rather than
+ * controls, and .card's 14px is a list-row measurement — it reads as cramped
+ * around two paragraphs of running text. More room, and a little air between
+ * the paragraphs, since the second one is a separate thought and not a
+ * continuation of the first. */
+#wanttobuy-intro { padding: 18px 18px 20px; }
+#wanttobuy-intro p { margin: 0; }
+#wanttobuy-intro p + p { margin-top: 12px; }
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--teal-tint);
+  color: var(--teal-dark);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill.is-plain { background: transparent; border: 1px solid var(--border); color: var(--slate); }
+
+.empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--slate);
+  opacity: 0.7;
+}
+
+/* =====================================================================
+ * ============ Grocery-specific components ============
+ *
+ * Everything below is new to this app. It is written against the JS modules in
+ * this directory — the class names here and the ones in swipe.js,
+ * inline-edit.js and reorder.js are one contract, catalogued in
+ * docs/CONTRACTS.md §5. Changing a name means changing both.
+ * ===================================================================== */
+
+/* ============ Quick-add composer ============
+ *
+ * Sits directly under .screen-head on all three tabs: a text field and an Add
+ * button, side by side.
+ *
+ *   <form class="composer">
+ *     <input class="composer-input" type="text" ...>
+ *     <button class="composer-add" type="submit">Add</button>
+ *   </form>
+ *
+ * A real <form> rather than a div plus a click handler, so Enter on a phone
+ * keyboard submits without any JS at all — and so the whole thing still works
+ * on a full page POST if a tab module wants to skip fetch entirely.
+ */
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+
+/* A composer at the TOP of a screen needs no space above it — the heading rule
+ * already provides it. One that follows content does, and the Shopping tab's
+ * "Add a store" box sits directly under the store list, where margin-bottom
+ * alone left the input butted against the last row's border with the two
+ * rounded corners touching. Scoped to the adjacency so the leading composer on
+ * every tab is untouched. */
+.list + .composer,
+.card + .composer,
+.accordion + .composer { margin-top: 14px; }
+.composer-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  /* 16px EXACTLY, never smaller. Below 16px iOS zooms the page on focus and
+     never zooms back out, which on a list you're adding six things to means
+     re-pinching after every item. */
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  appearance: none;
+}
+.composer-input:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+  border-color: var(--teal);
+}
+/* Overrides .btn-primary's width:100% — in a flex row the button sizes to its
+   label, and "Add" is two thumbs wide, not a full bar. */
+.composer-add {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: var(--tap);
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--teal);
+  color: #fff;
+  font-weight: 600;
+}
+.composer-add:hover { background: var(--teal-dark); }
+.composer-add:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ============ The list row primitive ============
+ *
+ * The shared swipeable row used by all three tabs. One structure, three
+ * meanings:
+ *
+ *   <ul class="list">
+ *     <li class="list-row" data-id="12">
+ *       <div class="row-slide">
+ *         <span class="drag-handle">…</span>      optional, reorder.js
+ *         <button class="row-check"></button>     optional, the checkbox
+ *         <span class="row-text">Milk (oat)</span>
+ *         <button class="row-cat pill">Dairy &amp; Eggs</button>   optional
+ *       </div>
+ *     </li>
+ *   </ul>
+ *
+ * TWO LAYERS, and both are load-bearing. The <li> is the fixed frame: it holds
+ * the delete affordance, the borders and the collapse animation. .row-slide is
+ * the only thing that moves under the finger. Translating the <li> itself would
+ * drag its own border and its delete label along with it, so there would be
+ * nothing revealed underneath.
+ */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Clips the sliding layer at the rounded corners, and stops a row mid-swipe
+     painting over the group heading above it. */
+  overflow: hidden;
+}
+.list:empty { display: none; }
+
+.list-row {
+  position: relative;
+  background: var(--error);   /* only ever visible behind a swiped row */
+
+  /* Vertical panning stays with the browser; horizontal movement comes to
+     swipe.js as pointer events. This one declaration is what stops the swipe
+     handler from hijacking the page scroll, and it does it in the compositor
+     rather than in JS — no amount of preventDefault() discipline is as
+     reliable. Do not change it to `none`: that kills scrolling over the list.
+     Do not remove it: without it the browser may claim the horizontal gesture
+     as an overscroll/back-navigation before swipe.js ever sees a move. */
+  touch-action: pan-y;
+
+  /* The collapse animation's starting point. A fixed max-height rather than
+     `height: auto` because auto is not animatable; 300px is far above any real
+     row and is never reached, so it has no visual effect until .is-removing
+     drops it to zero. */
+  max-height: 300px;
+  transition: max-height 0.18s ease, opacity 0.18s ease;
+}
+.list-row + .list-row .row-slide { border-top: 1px solid var(--border); }
+
+/* The delete affordance, revealed as the row slides left.
+ *
+ * A ::after on the frame rather than a real element: it is decoration, it is
+ * never tappable (the gesture is the control), and a real button here would be
+ * announced by a screen reader as a control that cannot be reached by keyboard. */
+.list-row::after {
+  content: "Delete";
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+
+  /* Bottom of an explicit three-layer stack: this label, then .row-slide over
+     it, then the grace bar over that. All three are positioned inside the same
+     stacking context, and with z-index:auto the painting order is tree order —
+     which puts generated ::after content ABOVE the element's own children. The
+     label therefore sat on top of the row at rest, showing through wherever the
+     row had content to collide with, most visibly across the category pill. It
+     is only ever meant to be seen through the gap a swiped row leaves behind. */
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* The desktop way out of a touch gesture.
+ *
+ * Swipe-to-delete is the whole interaction on a phone and does not exist on a
+ * desktop: there is no flick with a mouse, and the row is otherwise undeletable
+ * there. This is that backup — the same delete, the same undo snackbar, reached
+ * by a button instead of a thumb.
+ *
+ * Hidden by default and shown only to a fine pointer, so the phone keeps the
+ * clean row it was designed around and does not grow a 48px target sitting
+ * right beside the category pill, waiting to be fat-fingered. Delete it from
+ * the media query to show it everywhere. */
+.row-del {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--slate);
+  opacity: 0.45;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.row-del svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (hover: hover) and (pointer: fine) {
+  .row-del { display: flex; }
+  .row-del:hover, .row-del:focus-visible {
+    opacity: 1;
+    color: var(--error);
+    background: #f7ecec;
+  }
+}
+
+/* The moving layer. Everything visible lives in here. */
+.row-slide {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 8px 14px;
+  background: var(--surface);
+  transform: translateX(var(--swipe-dx, 0px));
+  transition: transform 0.18s ease;
+
+  /* Middle layer: covers the Delete label until the swipe slides this aside.
+     The opaque background is half of that job and this is the other half —
+     without it the label paints over this element's own children. */
+  z-index: 1;
+}
+
+/* Finger-tracking: no transition, or every frame lags 180ms behind the thumb.
+   swipe.js adds .is-swiping on gesture lock and removes it on release, which is
+   what makes the spring-back animate while the drag does not. */
+.list-row.is-swiping .row-slide {
+  transition: none;
+  will-change: transform;
+}
+
+/* Past the delete threshold. The label goes bold-white on full red so you can
+   see the commit point without watching the pixel offset — the gesture is
+   otherwise entirely un-discoverable in its most important respect, which is
+   how far is far enough. */
+.list-row.is-armed::after { font-size: 0.95rem; }
+.list-row.is-armed .row-slide { box-shadow: -6px 0 12px -6px rgba(0, 0, 0, 0.25); }
+
+/* Collapsing out after a delete. The row stays in the DOM through the undo
+   window so that Undo restores this exact element with its listeners intact;
+   this is what it looks like while it is gone. */
+.list-row.is-removing {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Checked / crossed out.
+ *
+ * ONE class for two tabs. Grocery uses it for a checked item during its grace
+ * window; Shopping uses it for a permanently crossed-out line. They look the
+ * same because they mean the same thing to the eye — done, but still here. */
+.list-row.is-checked .row-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  color: var(--slate);
+  opacity: 0.55;
+}
+.list-row.is-checked .row-cat { opacity: 0.5; }
+
+/* The grace window: checked, and counting down to disappearing.
+ *
+ * The countdown is a real bar rather than a fade, because a fade reads as "this
+ * is loading" and the whole point is that you have a few seconds to change your
+ * mind. Duration comes from --grace-ms, set by the tab module from
+ * cfg('grocery.grace_seconds') — so the bar and the server-side sweep are
+ * driven by the same number and can't drift apart.
+ *
+ * The row is still visible and still swipeable while this runs. */
+.list-row.is-grace { background: var(--teal-tint); }
+.list-row.is-grace .row-slide { background: var(--teal-tint); }
+.list-row.is-grace::before {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0;
+  height: 2px;
+  background: var(--teal);
+
+  /* Top layer, above .row-slide's 1. This bar is drawn across the bottom edge
+     of the row it is counting down, so it has to sit over the sliding layer
+     rather than under it — at z-index 1 it would tie with .row-slide and lose
+     on tree order, because a ::before paints before the element's children. */
+  z-index: 2;
+  animation: grace-drain var(--grace-ms, 3000ms) linear forwards;
+}
+@keyframes grace-drain {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+/* Someone who has asked the OS to stop animating things still needs to know the
+   row is on its way out; they get the tint and the strike-through, without a
+   bar sliding across their screen. */
+@media (prefers-reduced-motion: reduce) {
+  .list-row.is-grace::before { animation: none; width: 100%; opacity: 0.4; }
+  .row-slide, .list-row { transition: none; }
+}
+
+/* ---- row contents ---- */
+
+/* The text. Tapping it opens the inline editor (inline-edit.js), so it needs a
+   full-height hit area — a single line of text in a 48px row is a 22px target
+   otherwise. It is NOT a <button>: it has to be selectable text, and a button
+   that contains an editable input is invalid. */
+.row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  color: var(--heading);
+  /* These are freeform phrases up to 500 characters on two of the three tabs.
+     Wrapping is correct; truncating would hide the half of the sentence that
+     says which shop. */
+  overflow-wrap: anywhere;
+}
+.row-text:empty::before {
+  /* A row whose name somehow arrived empty still has to be tappable, or it is
+     a row you can neither read, edit nor swipe. Fail soft. */
+  content: "(untitled)";
+  color: var(--slate);
+  opacity: 0.5;
+}
+
+/* The in-place editor: an input that replaces .row-text's text and matches its
+   metrics closely enough that the row doesn't jump when it appears. */
+.row-edit {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  /* 16px again — see .composer-input. */
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--teal);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin: -3px 0;
+  appearance: none;
+}
+.row-edit:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
+/* While editing, the row must not slide or drag out from under the caret. */
+.list-row.is-editing { touch-action: auto; }
+.list-row.is-editing .row-slide { transform: none; }
+
+/* Secondary line under the row text — Want to Buy's notes, a store name, a
+   date. Put it inside .row-text's flex sibling slot, not inside .row-text
+   itself, or the inline editor will eat it. */
+.row-sub {
+  display: block;
+  width: 100%;
+  font-size: 0.8rem;
+  color: var(--slate);
+  opacity: 0.75;
+}
+.row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-body .row-text { align-self: auto; }
+
+/* An outbound link on a row. Keeps its own 48px target so that tapping the link
+   and tapping the text to edit are two different gestures rather than a
+   coin flip. */
+.row-link {
+  flex: none;
+  width: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--teal-dark);
+  text-decoration: none;
+}
+.row-link svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+/* The checkbox. A real <button aria-pressed> rather than <input type=checkbox>:
+   the tick has to be 48px and centred in a circle, and restyling a native
+   checkbox to that on iOS means hiding it and drawing one anyway. */
+.row-check {
+  flex: none;
+  width: 26px; height: 26px;
+  /* The visual circle is 26px but the tap target is the full row height plus
+     generous side padding, via the negative margin. 26px alone is half the
+     minimum and this is the single most-tapped control in the app. */
+  margin: -11px -4px -11px -4px;
+  padding: 11px 4px;
+  box-sizing: content-box;
+  background: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.row-check::before {
+  content: "";
+  width: 24px; height: 24px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.row-check[aria-pressed="true"]::before {
+  border-color: var(--teal);
+  background: var(--teal);
+  /* The tick is drawn rather than typed: a ✓ glyph renders at a different
+     weight and baseline on every platform, and inside a 24px circle that is the
+     difference between centred and not. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+  background-size: 16px 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.row-check:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 50%; }
+
+/* The category pill, on the right of a Grocery row.
+ *
+ * This is a CONTROL, not a label, and it exists because tapping the text edits
+ * the text (inline-edit.js). Re-categorizing therefore needs somewhere else to
+ * tap, and this is it — the pill opens the category sheet. That is the whole
+ * reason it is a <button>. */
+.row-cat {
+  flex: none;
+  border: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Well under 48px on purpose, and the one deliberate exception to the tap
+     minimum. Full height here would make the pill the visual centre of every
+     row, and the row already has two full-size targets flanking it. It sits in
+     the middle of an otherwise dead zone, so the practical target is larger
+     than the paint. */
+  min-height: 30px;
+  align-self: center;
+}
+.row-cat:hover { background: var(--teal); color: #fff; }
+
+/* The drag handle for reorder.js.
+ *
+ * An EXPLICIT handle, not long-press-to-drag. Long press on a touch list fights
+ * the scroll: the browser has already started panning by the time the press
+ * threshold fires, so the drag either never starts or starts with the list
+ * moving under it. A handle is unambiguous from the first pixel.
+ *
+ * touch-action:none is the mirror of .list-row's pan-y — on this element and
+ * only this element, the browser hands us every direction. */
+.drag-handle {
+  flex: none;
+  width: 34px;
+  min-height: var(--tap);
+  margin: -8px 0 -8px -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--border);
+  cursor: grab;
+  touch-action: none;
+  /* A long-press on a handle otherwise pops the iOS text-selection magnifier
+     mid-drag. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.drag-handle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.drag-handle:hover { color: var(--slate); }
+
+/* The row currently under the finger. Lifted off the list so it reads as
+   picked up, and translated by --drag-dy which reorder.js sets. Note this
+   transform is on the <li>, while the swipe transform is on .row-slide — the
+   two gestures never fight over the same property. */
+.list-row.is-dragging {
+  z-index: 2;
+  transform: translateY(var(--drag-dy, 0px));
+  transition: none;
+}
+.list-row.is-dragging .row-slide {
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.35);
+  background: var(--surface);
+}
+/* Everything else stops animating its own position while a drag is live, or the
+   rows swapping places chase the finger with a 180ms lag. */
+.list.is-reordering .list-row:not(.is-dragging) .row-slide { transition: transform 0.12s ease; }
+
+/* ============ Category groups (Grocery tab) ============
+ *
+ * Also the store groups on Shopping — same structure, different heading text.
+ * Kept generic rather than having a `cat-` set and a near-identical `store-`
+ * set, because they are visually the same thing and a second copy is a second
+ * thing to keep in sync.
+ */
+.cat-group { margin: 0 0 18px; }
+.cat-group:last-child { margin-bottom: 0; }
+
+.cat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--slate);
+  opacity: 0.75;
+}
+/* Sticky so the heading stays with its rows while you scroll a long list mid-
+   shop and you never lose track of which aisle you are reading. Not on the
+   Shopping tab's headings by default — add .is-sticky where you want it. */
+.cat-head.is-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 6px 2px;
+  margin-bottom: 4px;
+}
+.cat-count { font-weight: 600; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* A group heading that is itself a control (rename a store, collapse a
+   category). Strips the button chrome and keeps the typography. */
+.cat-head button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  min-height: 32px;
+}
+.cat-head button:hover { color: var(--teal-dark); }
+
+/* ============ Accordion (Want to Buy archive) ============
+ *
+ * <details>, not a div plus a click handler. It opens and closes with no JS at
+ * all, it is keyboard operable for free, and the browser gets the accessibility
+ * semantics right without a single aria attribute — which matters because the
+ * archive is 43 rows the author will open twice a year and nobody will ever
+ * test with a screen reader.
+ */
+.accordion {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 22px;
+  overflow: hidden;
+}
+.accordion-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--heading);
+  font-weight: 600;
+  cursor: pointer;
+  /* Kills the native disclosure triangle so the ::before below can draw one
+     that actually rotates. Safari needs the -webkit- form. */
+  list-style: none;
+}
+.accordion-head::-webkit-details-marker { display: none; }
+.accordion-head::before {
+  content: "";
+  flex: none;
+  width: 8px; height: 8px;
+  border-right: 2px solid var(--slate);
+  border-bottom: 2px solid var(--slate);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  margin-left: 2px;
+}
+.accordion[open] > .accordion-head::before { transform: rotate(45deg); }
+.accordion-head:hover { color: var(--teal-dark); }
+.accordion-count {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--slate);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.accordion-body { padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+/* Nested lists inside the accordion lose their own outer border — two nested
+   rounded boxes with a 12px gutter between them reads as a bug. */
+.accordion-body .list { border: 0; border-radius: 0; }
+
+/* ============ Snackbar (undo after delete) ============
+ *
+ * Created and removed by swipe.js; there is no empty host element sitting in
+ * the page. Anchored above the tab bar rather than at the bottom of the
+ * viewport, because at the bottom it covers the tab bar — and the tab bar is
+ * exactly where a thumb goes to escape a mistake.
+ */
+.snackbar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--safe-bottom) + var(--tap) + 12px);
+  z-index: 40;
+  max-width: calc(var(--maxw) - 24px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tap);
+  padding: 8px 8px 8px 16px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  animation: snackbar-in 0.16s ease-out;
+}
+@keyframes snackbar-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.snackbar-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  /* One line. A deleted 500-character shopping phrase would otherwise turn the
+     snackbar into a paragraph sitting over the list. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snackbar-action {
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.snackbar-action:hover { border-color: #fff; background: rgba(255, 255, 255, 0.12); }
+.snackbar.is-error { background: var(--error); }
+@media (prefers-reduced-motion: reduce) {
+  .snackbar { animation: none; }
+}

@@ -1,0 +1,29 @@
+# Deny-all. Uploaded .vcf files land here and are read by PHP from disk; HTTP
+# must never reach them.
+#
+# This is the most sensitive directory in the app by some distance. A contacts
+# export is names, phone numbers, email addresses and home addresses for
+# everyone in somebody's phone, in plain text, under a filename an attacker can
+# often guess from the phone's own export naming.
+#
+# THREE THINGS PROTECT IT, and none of them is trusted alone:
+#
+#   1. uploads/ sits OUTSIDE public/, so the document-root shim in the root
+#      .htaccess never rewrites a request into it.
+#   2. lib/import.php deletes the file the moment it has been parsed — the
+#      drafts are the artifact, and keeping the raw file means keeping every
+#      phone number you decided not to import.
+#   3. This file, which needs no modules and no PHP.
+#
+# 1 lives inside <IfModule mod_rewrite.c> and silently does nothing if the
+# module is unavailable. 2 does not happen on the run where the parser threw.
+# Same belt-and-braces reasoning as the config.php protection in the root
+# .htaccess: the cheap lock is the one that still holds when the clever one
+# has quietly stopped working.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

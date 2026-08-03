@@ -1,0 +1,119 @@
+# =====================================================================
+# Personal CRM — document-root shim
+# ---------------------------------------------------------------------
+# Hostinger points the (sub)domain at THIS folder and won't let us move
+# the document root down into public/. So the whole app tree is inside
+# the served area, which means without this file:
+#
+#   1. the domain root is a 403, because there's no index here; and
+#   2. lib/, tools/, uploads/, config.php and schema.sql are all
+#      fetchable over HTTP. Anything not executed as PHP is served as
+#      plain text, so a .sql dump reads out in the browser and
+#      config.php is one PHP misconfiguration away from printing the
+#      database password. uploads/ is worse again: it holds a .vcf that
+#      is somebody's entire address book until the parser deletes it.
+#
+# This rewrites every request down into public/ and denies the things
+# that must never be served.
+#
+# BETTER OPTION IF IT EVER BECOMES AVAILABLE: if the host lets you set
+# the document root directly to .../personal-cms/public, do that instead and
+# delete this file. The private folders then sit genuinely outside the
+# served tree rather than being denied inside it. This is the fallback
+# for when that setting is locked.
+# =====================================================================
+
+DirectoryIndex index.php
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Send /public/... back to the clean URL so the app has ONE address.
+  #
+  # Matched on THE_REQUEST (the literal request line) because that is
+  # untouched by internal rewrites — testing REQUEST_URI here would match
+  # this rule's own output and loop.
+  RewriteCond %{THE_REQUEST} \s/+public/(\S*) [NC]
+  RewriteRule ^ /%1 [R=301,L]
+
+  # Loop guard. In .htaccess the rewrite engine re-runs after an internal
+  # rewrite, and REQUEST_URI still holds the ORIGINAL path on that pass —
+  # so a condition on it never goes false and the rewrite loops until
+  # Apache gives up. Testing the rule pattern is what actually terminates.
+  RewriteRule ^public/ - [L]
+
+  # Unconditional, deliberately. The idiomatic
+  #   RewriteCond %{REQUEST_FILENAME} !-f
+  # guard is actively HARMFUL here: config.php does exist, so that guard
+  # would serve it instead of rewriting it into a 404.
+  RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Make the browser CHECK whether a script or stylesheet changed, instead of
+# assuming it didn't.
+#
+# The entry points carry ?v=<mtime> from asset(), but the ES modules they import
+# are literals inside .js files that no PHP ever touches, so those URLs never
+# change and a cached copy is kept indefinitely. The import map in layout.php is
+# the precise fix; this is the backstop, and it also covers anything else that
+# gets referenced without a version later.
+#
+# no-cache does NOT mean "don't cache" — it means "revalidate before reusing".
+# The browser still stores the file and still gets a 304 with no body when it
+# hasn't changed, so this costs one conditional request per asset per load.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
+# mod_alias, not mod_rewrite — .git survives an FTP upload more often than
+# anyone expects, and a readable .git/config is a credential leak. The
+# FilesMatch rules below can't cover it: they match the final path segment,
+# so /.git/config looks like the innocuous filename "config".
+#
+# .well-known is excluded because Let's Encrypt renewal lives there and
+# blocking it silently breaks certificate renewal months later.
+RedirectMatch 404 ^/\.(?!well-known)
+
+# Everything below needs NO modules, and that is the point: every rewrite
+# above sits inside <IfModule mod_rewrite.c>. If that module is ever
+# unavailable the rewrites silently do nothing at all and these files
+# start being served as plain text, with the database password among them.
+
+<FilesMatch "^config\.php$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# .vcf is in this list for this app specifically: an uploaded contacts file
+# is plain text a browser will happily render, and it is the single most
+# sensitive thing this app ever touches. It is belt to uploads/.htaccess'
+# braces — the file is supposed to be deleted the moment it is parsed, and
+# this covers the run where the parse died before it got there.
+<FilesMatch "\.(sql|md|dist|csv|txt|json|vcf|example\.php)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

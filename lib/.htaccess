@@ -1,0 +1,12 @@
+# Deny-all. This directory is read by PHP from disk; HTTP must never reach it.
+#
+# NOT redundant with the rewrite in the root .htaccess. That rewrite lives
+# inside <IfModule mod_rewrite.c> — if the module is unavailable it silently
+# does nothing and everything here is wide open. This file needs no modules.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
