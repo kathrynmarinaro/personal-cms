@@ -68,9 +68,19 @@ nothing outside it.
 
 **`public/person.php`** — P renders the identity block (name, birthday, phone,
 email, address, notes) and the tag pills, and leaves three empty regions,
-literally marked:
+literally marked.
+
+**As built (Phase 1), the file carries SIX regions, every one of them opened and
+closed, in this order and no other.** P's three are marked too, so that the
+boundary between P's markup and yours is explicit rather than inferred:
 
 ```php
+<!-- REGION: identity — owned by P -->
+<!-- END REGION: identity -->
+
+<!-- REGION: tags — owned by P -->
+<!-- END REGION: tags -->
+
 <!-- REGION: reminders — owned by R -->
 <!-- END REGION: reminders -->
 
@@ -79,16 +89,68 @@ literally marked:
 
 <!-- REGION: log — owned by I -->
 <!-- END REGION: log -->
+
+<!-- REGION: danger — owned by P -->
+<!-- END REGION: danger -->
 ```
 
-Order on screen, top to bottom: identity, tags, **reminders**, **gifts**,
-**log**. Everything above the first region is P's; each region belongs to the
-track named in it. `public/assets/person.js` is P's file and each track appends
-its own `attach*` call at the bottom, in the same order.
+Copy those strings verbatim — the em dash is a real em dash and
+`tools/run-tests.php` asserts the set, the order and the owner letters. Add
+markup **inside** your region only. `danger` is the "Delete this person" control
+and sits below the log deliberately: it is the last thing on the screen because
+it is the last thing you should be able to reach for.
+
+All six live inside an `if` that renders the profile; the `?delete=1`
+confirmation screen renders in place of all of them, and `?edit=1` swaps the
+identity region's read view for the edit form. Neither affects your region's
+markers.
+
+`public/assets/person.js` is P's file and each track appends its own `attach*`
+call at the bottom, in the same order, inside the matching JS markers P laid
+down there:
+
+```js
+/* REGION: reminders — owned by R */
+/* END REGION: reminders */
+```
+
+(plus `gifts` and `log`). `identity`, `tags` and `danger` have no JS region —
+P's own wiring sits above the marked block.
 
 **`public/index.php`** — the Today dashboard, and **R owns it outright**. P may
 land a placeholder so the app has a home page during Phase 1; R replaces it
-wholesale and owes it nothing.
+wholesale and owes it nothing. As built it is nine lines: bootstrap,
+`require_login_page()`, a 302 to `people.php`. Delete all of it.
+
+### What Phase 1 landed that the other tracks need to know
+
+Four things settled while building People that are not in the original text:
+
+- **`people_add(array $fields, string $today)` and
+  `people_save(int $id, array $fields, string $today)` already take `$today`,
+  and Phase 1 does not read it.** It is there for R: §2 and `schema.sql` both
+  name `people_save()` as one of the two places a birthday reminder is
+  reconciled, and both functions carry a marked `HOOK, PHASE 2B` comment at
+  exactly the point the call goes. **R adds one line inside each hook and a
+  `require_once` for `lib/reminders.php` at the top of `lib/people.php` — that
+  is the whole of R's footprint in P's file**, and it needs no signature change
+  and no edit to `add.php`, `person.php`, `person-add.php` or
+  `person-update.php`.
+
+- **`lib/people.php` carries one function that renders markup**,
+  `people_form_fields(?array $person)`: the seven identity controls, including
+  the three birthday inputs. It is shared because `add.php` and `person.php`
+  both render that form and the yearless-birthday case is the thing two copies
+  would drift on. Nothing else in `lib/` prints anything.
+
+- **`tag-delete.php` was deliberately not built** — see §6.
+
+- **`tools/run-tests.php`'s SHARED_MODULES check changed shape.** It used to
+  assert that the `.js` files on disk were exactly `SHARED_MODULES`, which only
+  held while no screen had an entry script. It now scans every module for
+  `from './x.js'` and asserts each imported name is declared — which is what
+  `lib/layout.php`'s comment always described, and what actually catches the
+  bug. Same assertion count; a feature module of your own needs no change to it.
 
 ---
 

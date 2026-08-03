@@ -680,6 +680,418 @@ ok(
 
 is_same(auth_is_configured(), false, 'the example config leaves the gate unarmed (CHANGE_ME)');
 
+/* ============================================================ P · People ==== */
+
+/* Phase 1. lib/people.php is the only thing in the app that writes to people,
+ * relationship_tags or person_tag_map, so these run the REAL repo functions
+ * through the REAL q() against the harness connection — see lib/db.php's
+ * CLI-only override.
+ *
+ * Starting from an empty people table so the counts below are absolute. The
+ * foundation sections above left one row behind (Yearless Yolanda) and nothing
+ * after this point reads it. */
+require_once $appRoot . '/lib/people.php';
+q('DELETE FROM people');
+
+section('lib/people.php — cleaning what was typed');
+
+is_same(people_clean_name('  Alex Chen  '), 'Alex Chen', 'a name is trimmed');
+is_same(people_clean_name('  '), null, 'and an empty one is null, not an empty row');
+is_same(people_clean_name('iPhone Repair Guy'), 'iPhone Repair Guy', 'NOTHING ELSE IS DONE TO IT — no title-casing, no autocorrect');
+is_same(people_clean_name('Alex (from climbing)'), 'Alex (from climbing)', 'punctuation somebody chose survives');
+is_same(mb_strlen(people_clean_name(str_repeat('n', 300)) ?? '', 'UTF-8'), 190, 'and it is capped at the column width rather than rejected whole');
+
+is_same(people_name_key('Alex Chen'), 'alex chen', 'name_key lowercases');
+is_same(people_name_key('Dr. Okafor'), 'dr okafor', 'and drops punctuation');
+is_same(people_name_key("O'Brien"), 'obrien', "AN APOSTROPHE VANISHES rather than becoming a space, so O'Brien meets OBrien");
+is_same(people_name_key('O’Brien'), 'obrien', 'including the curly one iOS substitutes as you type');
+is_same(people_name_key('Ana-Maria'), 'ana maria', 'a hyphen becomes a space, so Ana-Maria meets Ana Maria');
+is_same(people_name_key('José'), 'jose', 'ACCENTS ARE FOLDED, so searching "jose" finds him without hunting for the accent key');
+is_same(people_name_key('Müller'), 'muller', 'and so is an umlaut');
+is_same(people_name_key('  Alex   Chen  '), 'alex chen', 'runs of whitespace collapse to one');
+is_same(people_name_key('Ægir Straße'), 'aegir strasse', 'the two-letter folds expand rather than dropping a character');
+is_same(people_name_key('   '), '', 'and a name of nothing gives an empty key rather than throwing');
+
+is_same(people_clean_address("12 Elm St\nApt 4\nAustin"), '12 Elm St, Apt 4, Austin', 'an address folds its newlines into one stored line');
+is_same(people_clean_address('   '), null, 'and an empty one is null');
+is_same(people_clean_notes("first thought\n\nsecond"), "first thought\n\nsecond", 'NOTES KEEP THEIR NEWLINES — this is the one field that holds paragraphs');
+is_same(mb_strlen((string) people_clean_notes(str_repeat('x', 5000)), 'UTF-8'), 5000, 'and are not capped, because the column is TEXT and truncating cuts a thought in half');
+is_same(people_clean_phone('  +44 20 7946 0958 '), '+44 20 7946 0958', 'a phone number keeps the spacing it was typed with');
+is_same(people_clean_tag_name('  Old   Neighbours '), 'Old Neighbours', 'a tag name collapses its whitespace, because it is a heading');
+
+section('lib/people.php — the split birthday');
+
+$bd = people_clean_birthday(1991, 4, 15, '2026-08-03');
+is_same($bd, array('birth_year' => 1991, 'birth_month' => 4, 'birth_day' => 15), 'a full birthday keeps all three parts');
+
+$bd = people_clean_birthday('', 4, 15, '2026-08-03');
+is_same($bd['birth_year'], null, 'A YEARLESS BIRTHDAY IS A REAL BIRTHDAY — BDAY:--0415 out of a phone');
+is_same($bd['birth_month'], 4, 'its month survives');
+is_same($bd['birth_day'], 15, 'and its day');
+
+is_same(
+    people_clean_birthday(1991, '', '', '2026-08-03'),
+    array('birth_year' => null, 'birth_month' => null, 'birth_day' => null),
+    'A YEAR WITH NO MONTH IS NOT A BIRTHDAY — the three columns are not independent'
+);
+is_same(
+    people_clean_birthday(null, 4, null, '2026-08-03')['birth_month'],
+    null,
+    'and neither is a month with no day'
+);
+is_same(people_clean_birthday(2031, 4, 15, '2026-08-03')['birth_year'], null, 'a birth year in the future is dropped');
+is_same(people_clean_birthday(2031, 4, 15, '2026-08-03')['birth_month'], 4, 'AND THE MONTH AND DAY SURVIVE IT — the year is a display nicety, the month/day is the reminder');
+is_same(people_clean_birthday(91, 4, 15, '2026-08-03')['birth_year'], null, 'a two-digit slip is dropped rather than stored as the year 91');
+is_same(people_clean_birthday(null, 6, 31, '2026-08-03')['birth_day'], 31, 'AN IMPOSSIBLE DAY IS STORED AS GIVEN — lib/dates.php clamps on read, so nothing rewrites what the import said');
+is_same(people_clean_birthday(null, 13, 1, '2026-08-03')['birth_month'], null, 'but an impossible month is not a month at all');
+is_same(people_clean_birthday(null, 2, 29, '2026-08-03')['birth_day'], 29, 'February 29 is a real birthday and is stored as one');
+
+section('lib/people.php — creating, reading and updating');
+
+$today = '2026-08-03';
+
+$alexId = people_add(array('name' => 'Alex Chen', 'birth_month' => 4, 'birth_day' => 15), $today);
+ok($alexId > 0, 'people_add() returns the new id');
+
+$alex = people_get($alexId);
+is_same($alex['name'], 'Alex Chen', 'the name is stored exactly as passed');
+is_same($alex['name_key'], 'alex chen', 'AND name_key IS DERIVED BY THE REPO — no caller can forget it');
+is_same($alex['birth_year'], null, 'a yearless birthday round-trips as a NULL year');
+is_same($alex['birth_month'], 4, 'with its month');
+is_same($alex['last_contact_date'], null, 'a new person has never been contacted');
+is_same($alex['phone'], null, 'and an omitted field is NULL rather than an empty string');
+
+is_same(people_get(99999), null, 'people_get() answers null for somebody who is not there');
+
+ok(
+    people_save($alexId, array(
+        'name' => 'Alexandra Chen', 'birth_year' => 1991, 'birth_month' => 4, 'birth_day' => 15,
+        'address' => '12 Elm St', 'phone' => '555 0100', 'email' => 'a@example.com', 'notes' => 'moved',
+    ), $today),
+    'people_save() reports that it found the row'
+);
+$alex = people_get($alexId);
+is_same($alex['name_key'], 'alexandra chen', 'A RENAME RE-DERIVES name_key — a stale key is a duplicate nobody will ever be told about');
+is_same($alex['birth_year'], 1991, 'the year can be filled in later');
+is_same($alex['address'], '12 Elm St', 'and the rest of the fields land');
+
+ok(
+    people_save($alexId, array(
+        'name' => 'Alexandra Chen', 'birth_year' => null, 'birth_month' => null, 'birth_day' => null,
+        'address' => null, 'phone' => null, 'email' => null, 'notes' => null,
+    ), $today),
+    'saving again succeeds'
+);
+$alex = people_get($alexId);
+is_same($alex['address'], null, 'A WHOLE-ROW SAVE CAN CLEAR A FIELD — an address that changed has to be erasable');
+is_same($alex['birth_month'], null, 'and can clear a birthday, which is a different state from having one with no year');
+
+q('UPDATE people SET last_contact_date = ? WHERE id = ?', array('2026-06-30', $alexId));
+people_save($alexId, array('name' => 'Alexandra Chen'), $today);
+is_same(
+    people_get($alexId)['last_contact_date'],
+    '2026-06-30',
+    'people_save() DOES NOT TOUCH last_contact_date — an identity edit is not a conversation'
+);
+
+section('lib/people.php — duplicate names are flagged, never refused');
+
+$twinId = people_add(array('name' => 'James Smith'), $today);
+$twin2Id = people_add(array('name' => 'james  smith'), $today);
+is_same(
+    (int) q('SELECT COUNT(*) AS n FROM people WHERE name_key = ?', array('james smith'))->fetch()['n'],
+    2,
+    'TWO PEOPLE REALLY CAN SHARE A NAME — the second insert is not refused'
+);
+is_same(people_get($twin2Id)['name'], 'james  smith', 'and the second one keeps the name as typed, spacing and all');
+
+is_same(count(people_same_name('james smith')), 2, 'people_same_name() finds both');
+is_same(count(people_same_name('james smith', $twinId)), 1, 'and excludes the person being asked about, who is not their own duplicate');
+is_same(people_same_name('nobody at all'), array(), 'an unmatched key finds nobody');
+is_same(people_same_name(''), array(), 'and an empty key finds nobody rather than everybody');
+
+section('lib/people.php — tags');
+
+$family = tag_find_by_name('Family');
+ok($family !== null && $family['is_preset'] === true, 'the seeded tags read back as presets');
+is_same(tag_find_by_name('FAMILY')['id'], $family['id'], 'tag lookup is case-insensitive on BOTH databases, because it compares in PHP');
+
+ok(people_assign_tag($alexId, $family['id']), 'a tag can be assigned');
+ok(people_assign_tag($alexId, $family['id']), 'ASSIGNING IT TWICE IS A NO-OP, not a primary-key error — a double tap is one gesture');
+is_same(
+    (int) q('SELECT COUNT(*) AS n FROM person_tag_map WHERE person_id = ?', array($alexId))->fetch()['n'],
+    1,
+    'and leaves exactly one link'
+);
+
+$colleague = tag_find_by_name('Colleague');
+people_assign_tag($alexId, $colleague['id']);
+is_same(
+    array_column(people_tags($alexId), 'name'),
+    array('Family', 'Colleague'),
+    'people_tags() comes back in group order, which is closeness and not the alphabet'
+);
+
+ok(!people_assign_tag($alexId, 99999), 'a tag that does not exist is refused rather than throwing a foreign-key error');
+ok(!people_assign_tag(99999, $family['id']), 'and so is a person who does not exist');
+
+ok(people_unassign_tag($alexId, $colleague['id']), 'a tag can be taken off');
+ok(people_unassign_tag($alexId, $colleague['id']), 'and taking off one they never had is still a success — the end state is what was asked for');
+is_same(count(people_tags($alexId)), 1, 'leaving the other one alone');
+
+$custom = tags_add('Neighbour');
+is_same($custom['is_preset'], false, 'a custom tag is the same row with is_preset 0');
+ok($custom['sort_order'] > 5, 'and sorts after the seeded five, because it has not been ranked against them');
+is_same(tags_add('neighbour')['id'], $custom['id'], 'ADDING A NAME THAT EXISTS RETURNS THAT TAG rather than erroring about capitalisation');
+is_same(tags_add('   '), null, 'and a tag of nothing is refused');
+
+is_same(tags_rename($custom['id'], 'Old Neighbours')['name'], 'Old Neighbours', 'a tag can be renamed');
+is_same(tag_get($custom['id'])['name'], 'Old Neighbours', 'and the rename sticks');
+is_same(tags_rename($custom['id'], 'Family'), null, 'RENAMING ONTO ANOTHER TAG IS REFUSED — merging two groups is not something a rename may do silently');
+is_same(tags_rename($custom['id'], 'Old Neighbours')['id'], $custom['id'], 'but renaming a tag to the name it already has is a success, not a collision');
+is_same(tags_rename(99999, 'Ghosts'), null, 'and renaming a tag that is not there fails cleanly');
+
+/* The rename moved nobody: person_tag_map points at the id, never at the name. */
+is_same(count(people_tags($alexId)), 1, 'a rename does not disturb who is tagged');
+
+section('lib/people.php — the People list, grouped');
+
+$momId = people_add(array('name' => 'Mum'), $today);
+people_assign_tag($momId, $family['id']);
+people_assign_tag($alexId, $colleague['id']);
+
+$groups = people_grouped();
+$groupNames = array_column($groups, 'name');
+
+is_same($groupNames, array('Family', 'Colleague', PEOPLE_UNTAGGED), 'groups come out in tag order with Untagged last');
+is_same($groups[count($groups) - 1]['id'], null, 'THE UNTAGGED GROUP IS NOT A TAG — it has no id, so nothing can try to assign it');
+is_same($groups[count($groups) - 1]['sort_order'], PEOPLE_UNTAGGED_SORT, 'and carries the documented sort position');
+
+ok(!in_array('Friend', $groupNames, true), 'a tag nobody holds gets no heading — an empty group is a heading for nobody');
+
+is_same(
+    array_column($groups[0]['people'], 'name'),
+    array('Alexandra Chen', 'Mum'),
+    'a group lists its people in name order'
+);
+is_same(
+    array_column($groups[1]['people'], 'name'),
+    array('Alexandra Chen'),
+    'A PERSON WITH TWO TAGS APPEARS UNDER BOTH — that is the whole reason these are tags'
+);
+is_same(
+    array_column($groups[2]['people'], 'name'),
+    array('James Smith', 'james  smith'),
+    'and everybody with no tag at all lands in Untagged'
+);
+
+/* The edge case worth stating out loud: give the last untagged person a tag and
+ * the group has to disappear, not linger as an empty heading. */
+$onlyUntagged = array();
+foreach ($groups[2]['people'] as $p) {
+    $onlyUntagged[] = $p['id'];
+}
+foreach ($onlyUntagged as $pid) {
+    people_assign_tag($pid, $family['id']);
+}
+is_same(
+    array_column(people_grouped(), 'name'),
+    array('Family', 'Colleague'),
+    'TAGGING THE LAST UNTAGGED PERSON REMOVES THE UNTAGGED GROUP ENTIRELY'
+);
+foreach ($onlyUntagged as $pid) {
+    people_unassign_tag($pid, $family['id']);
+}
+ok(in_array(PEOPLE_UNTAGGED, array_column(people_grouped(), 'name'), true), 'and untagging them brings it back');
+
+is_same(people_grouped('no such person'), array(), 'a search that matches nobody produces no groups at all, not empty ones');
+
+section('lib/people.php — searching');
+
+is_same(array_column(people_list('chen'), 'name'), array('Alexandra Chen'), 'search matches part of a name');
+is_same(array_column(people_list('CHEN'), 'name'), array('Alexandra Chen'), 'case-insensitively, because it runs against name_key');
+is_same(array_column(people_list('  '), 'name'), array_column(people_list(), 'name'), 'a whitespace-only search is no search');
+
+$joseId = people_add(array('name' => 'José Ferreira', 'email' => 'jose@example.com', 'phone' => '555 0199'), $today);
+is_same(array_column(people_list('jose'), 'name'), array('José Ferreira'), 'AN UNACCENTED SEARCH FINDS AN ACCENTED NAME — nobody should have to find the accent key');
+is_same(array_column(people_list('jose@example'), 'name'), array('José Ferreira'), 'an email fragment matches');
+is_same(array_column(people_list('example.com'), 'name'), array('José Ferreira'), 'THE EMAIL IS MATCHED RAW, not folded — nobody searches for a half-remembered address with the dots taken out');
+is_same(array_column(people_list('0199'), 'name'), array('José Ferreira'), 'and so does part of a phone number');
+
+/* LIKE's own wildcards have to be neutralised or a search for "%" returns the
+ * whole address book and a search for "_" returns everyone with a two-letter
+ * anything. */
+is_same(people_list('%'), array(), 'A PERCENT SIGN IS A LITERAL, not "everybody"');
+is_same(people_list('_'), array(), 'and so is an underscore');
+is_same(people_list('!'), array(), 'including the escape character itself, which has to escape itself');
+
+section('lib/people.php — rendering helpers');
+
+is_same(people_contact_label(null, '2026-08-03'), 'Never contacted', 'NULL IS RENDERED AS A WORD, because never contacted is a real answer');
+is_same(people_contact_label('2026-08-03', '2026-08-03'), 'Contacted today', 'today');
+is_same(people_contact_label('2026-08-02', '2026-08-03'), 'Contacted yesterday', 'yesterday');
+is_same(people_contact_label('2026-06-30', '2026-08-03'), 'Last contacted 34 days ago', 'and the "34 days ago" subline the People list is built around');
+is_same(people_contact_label('not a date', '2026-08-03'), 'Last contact date unreadable', 'a malformed value degrades this one line rather than claiming they were never contacted');
+is_same(people_contact_label('2026-09-01', '2026-08-03'), 'Last contacted September 1, 2026', 'and a future date is shown as a date rather than as a negative number of days');
+
+is_same(people_birthday_label(array('birth_year' => null, 'birth_month' => null, 'birth_day' => null), '2026-08-03'), '', 'no birthday renders as nothing at all');
+is_same(people_birthday_label(array('birth_year' => null, 'birth_month' => 4, 'birth_day' => 15), '2026-08-03'), 'April 15', 'A YEARLESS BIRTHDAY IS "April 15"');
+is_same(people_birthday_label(array('birth_year' => 1991, 'birth_month' => 4, 'birth_day' => 15), '2026-08-03'), 'April 15 (turning 36)', 'and a dated one adds the age they will be ON THE NEXT ONE — 1991, asked in August 2026, is next April\'s 36 and not this April\'s 35');
+is_same(people_birthday_label(array('birth_year' => 1991, 'birth_month' => 4, 'birth_day' => 15), '2026-04-15'), 'April 15 (turning 35)', 'which on the birthday itself is the age they turn today');
+is_same(people_birthday_label(array('birth_year' => null, 'birth_month' => 2, 'birth_day' => 29), '2026-08-03'), 'February 29', 'A LEAP-DAY BIRTHDAY READS AS ITSELF even though its reminder fires on the 28th');
+is_same(people_birthday_label(array('birth_year' => null, 'birth_month' => 6, 'birth_day' => 31), '2026-08-03'), 'June 30', 'and an impossible day out of a bad import clamps rather than showing July');
+
+is_same(people_tel('+44 20 7946 0958'), 'tel:+442079460958', 'a phone number becomes a dialable tel: without losing its plus');
+is_same(people_tel('ask his mother'), null, 'something that is not a number is shown but not offered as a link');
+is_same(people_tel(null), null, 'and nothing at all is nothing at all');
+is_same(people_mailto('alex@example.com'), 'mailto:alex@example.com', 'an address becomes a mailto:');
+is_same(people_mailto('alex at example dot com'), null, 'ONE THAT ISN\'T AN ADDRESS IS STILL STORED AND SHOWN, just not linked');
+is_same(people_mailto("a@b.com\nBcc: x@y.com"), null, 'and one carrying a newline is never turned into an href');
+
+section('lib/people.php — deleting a person takes everything with them');
+
+$doomedId = people_add(array('name' => 'Doomed Person'), $today);
+people_assign_tag($doomedId, $family['id']);
+q('INSERT INTO gift_ideas (person_id, idea_text) VALUES (?, ?)', array($doomedId, 'a walnut board'));
+q('INSERT INTO contact_log (person_id, logged_at) VALUES (?, ?)', array($doomedId, '2026-07-01 09:00:00'));
+q('INSERT INTO reminders (person_id, type, next_due_date) VALUES (?, ?, ?)', array($doomedId, 'birthday', '2026-04-08'));
+$doomedReminder = (int) db()->lastInsertId();
+q('INSERT INTO reminder_sends (reminder_id, due_date) VALUES (?, ?)', array($doomedReminder, '2026-04-08'));
+
+$gone = people_delete($doomedId);
+is_same($gone['name'], 'Doomed Person', 'people_delete() hands back who they were, for the message');
+is_same(people_get($doomedId), null, 'and they are gone');
+
+is_same((int) q('SELECT COUNT(*) AS n FROM person_tag_map WHERE person_id = ?', array($doomedId))->fetch()['n'], 0, 'their tag links go');
+is_same((int) q('SELECT COUNT(*) AS n FROM gift_ideas WHERE person_id = ?', array($doomedId))->fetch()['n'], 0, 'their gift ideas go');
+is_same((int) q('SELECT COUNT(*) AS n FROM contact_log WHERE person_id = ?', array($doomedId))->fetch()['n'], 0, 'their contact log goes');
+is_same((int) q('SELECT COUNT(*) AS n FROM reminders WHERE person_id = ?', array($doomedId))->fetch()['n'], 0, 'their reminders go');
+is_same((int) q('SELECT COUNT(*) AS n FROM reminder_sends WHERE reminder_id = ?', array($doomedReminder))->fetch()['n'], 0, 'AND THE SEND LEDGER GOES WITH THEM, two levels down');
+
+is_same(people_delete($doomedId), null, 'deleting them a second time is null rather than an error — a double tap wanted them gone and they are');
+
+/* Deleting the TAG, on the other hand, leaves the people alone. */
+$tempTagId = tags_add('Temporary')['id'];
+people_assign_tag($alexId, $tempTagId);
+q('DELETE FROM relationship_tags WHERE id = ?', array($tempTagId));
+ok(people_get($alexId) !== null, 'deleting a tag does not delete the people who held it');
+is_same(
+    (int) q('SELECT COUNT(*) AS n FROM person_tag_map WHERE tag_id = ?', array($tempTagId))->fetch()['n'],
+    0,
+    'it only takes its links, which have no meaning without it'
+);
+
+section('P · People — the screens and their contracts');
+
+/* public/person.php is written by FOUR tracks (docs/CONTRACTS.md §1). The
+ * markers are the entire mechanism that keeps them from colliding, so they get
+ * asserted rather than trusted: a region silently renamed or reordered is three
+ * agents editing the wrong part of a file that still runs. */
+$personSrc = (string) file_get_contents($appRoot . '/public/person.php');
+$regionOrder = array('identity', 'tags', 'reminders', 'gifts', 'log', 'danger');
+$owners = array(
+    'identity' => 'P', 'tags' => 'P', 'reminders' => 'R',
+    'gifts' => 'I', 'log' => 'I', 'danger' => 'P',
+);
+$found = array();
+preg_match_all('/<!-- REGION: ([a-z]+) — owned by ([A-Z]) -->/u', $personSrc, $markers, PREG_SET_ORDER);
+foreach ($markers as $marker) {
+    $found[] = $marker[1];
+}
+is_same($found, $regionOrder, 'person.php declares the six regions in the contracted top-to-bottom order');
+
+$ownersFound = array();
+foreach ($markers as $marker) {
+    $ownersFound[$marker[1]] = $marker[2];
+}
+is_same($ownersFound, $owners, 'and names the right owner on each — R gets reminders, I gets gifts and the log');
+
+$missingEnd = array();
+foreach ($regionOrder as $region) {
+    if (!str_contains($personSrc, '<!-- END REGION: ' . $region . ' -->')) {
+        $missingEnd[] = $region;
+    }
+}
+ok($missingEnd === array(), 'every region is CLOSED, so a track knows where its own ends', implode(', ', $missingEnd));
+
+$personJs = (string) file_get_contents($appRoot . '/public/assets/person.js');
+$jsRegions = array();
+preg_match_all('/\/\* REGION: ([a-z]+) — owned by ([A-Z]) \*\//u', $personJs, $jsMarkers, PREG_SET_ORDER);
+foreach ($jsMarkers as $marker) {
+    $jsRegions[] = $marker[1];
+}
+is_same(
+    $jsRegions,
+    array('reminders', 'gifts', 'log'),
+    'person.js carries the three Phase 2 attach* regions, in the same order as the markup'
+);
+
+/* Every screen needs the POST form or there is no way to sign out: logout.php
+ * is POST-only and menu.js requestSubmit()s this. Missing it looks like nothing
+ * at all until somebody taps Sign out. */
+foreach (array('people.php', 'person.php', 'add.php') as $screen) {
+    ok(
+        str_contains((string) file_get_contents($appRoot . '/public/' . $screen), 'id="logout-form"'),
+        $screen . ' carries the hidden logout form menu.js submits'
+    );
+}
+
+/* index.php is a placeholder that R replaces (CONTRACTS §1). It exists so the
+ * `today` tab and the site root are not a 404 and so build-deploy stops failing
+ * on a missing manifest entry — and it must still be gated, because a redirect
+ * that leaks which screens exist is a redirect an unauthenticated visitor gets. */
+$indexSrc = (string) file_get_contents($appRoot . '/public/index.php');
+ok(str_contains($indexSrc, 'require_login_page()'), 'index.php is behind the gate like every other screen');
+ok(str_contains($indexSrc, 'people.php'), 'and sends you somewhere that works until Phase 2B replaces it');
+
+/* Every mutating endpoint, in order: logged in, same origin, POST. Skipping any
+ * one of the three is a hole that no screen would ever show you. */
+$endpoints = glob($appRoot . '/public/api/*.php') ?: array();
+ok(count($endpoints) >= 6, 'the person-* and tag-* endpoints are present', count($endpoints) . ' found');
+$ungated = array();
+foreach ($endpoints as $endpoint) {
+    $src = (string) file_get_contents($endpoint);
+    if (!str_contains($src, 'require_login_api()')
+        || !str_contains($src, 'require_same_origin()')
+        || !str_contains($src, "require_method('POST')")
+    ) {
+        $ungated[] = basename($endpoint);
+    }
+}
+ok($ungated === array(), 'every endpoint gates on login, same origin and POST', implode(', ', $ungated));
+
+/* The one shared piece of markup in lib/people.php, rendered by both add.php and
+ * person.php. The birthday is the reason it is shared at all: two copies is how
+ * one of them ends up without the optional year box. */
+ob_start();
+people_form_fields(people_get($joseId));
+$fields = (string) ob_get_clean();
+
+foreach (array('name', 'birth_month', 'birth_day', 'birth_year', 'phone', 'email', 'address', 'notes') as $field) {
+    ok(
+        str_contains($fields, 'name="' . $field . '"'),
+        'the shared identity form renders the ' . $field . ' control'
+    );
+}
+ok(str_contains($fields, 'José Ferreira'), 'and fills it in from the person it was given');
+ok(
+    !str_contains($fields, 'type="number"'),
+    'the birthday inputs are NOT type=number — a scroll wheel over one silently changes a birth year'
+);
+ok(
+    str_contains($fields, 'inputmode="numeric"'),
+    'they carry inputmode="numeric" instead, which is what puts the keypad on a phone'
+);
+ok(
+    str_contains($fields, 'required'),
+    'the name is the only required field, because everything else about a person can be unknown'
+);
+
+ob_start();
+people_form_fields(null);
+$blank = (string) ob_get_clean();
+ok(str_contains($blank, 'value=""'), 'and a blank form renders empty rather than throwing on a null person');
+
 /* ============================================== cross-file consistency ===== */
 
 section('Contracts that span two files');
@@ -750,11 +1162,31 @@ ok(
 foreach (SHARED_MODULES as $module) {
     ok(is_file(PUBLIC_DIR . '/assets/' . $module), $module . ' is in SHARED_MODULES and on disk');
 }
-$onDisk = array_map('basename', glob(PUBLIC_DIR . '/assets/*.js') ?: array());
-sort($onDisk);
-$listed = SHARED_MODULES;
-sort($listed);
-is_same($onDisk, $listed, 'every shared JS module is declared in SHARED_MODULES, so all of them get cache-busted');
+/* The other half of the same bug, and the one lib/layout.php's comment actually
+ * describes: "the test suite checks this list against what the feature modules
+ * actually import". A screen's entry script goes through asset() and is
+ * cache-busted by its own mtime; the modules it IMPORTS are bare specifiers
+ * inside a .js file that no PHP ever touches, so they are only ever busted by
+ * the import map — and a module missing from SHARED_MODULES is served from
+ * cache forever with nothing in any log to say so.
+ *
+ * Scanning the imports rather than comparing the directory listing: a feature
+ * module (people.js, person.js, add.js…) is an entry point and correctly NOT in
+ * the list, so directory equality only held while there were no screens. */
+$undeclared = array();
+foreach (glob(PUBLIC_DIR . '/assets/*.js') ?: array() as $jsFile) {
+    preg_match_all('/from\s+[\'"]\.\/([A-Za-z0-9._-]+\.js)[\'"]/', (string) file_get_contents($jsFile), $imports);
+    foreach ($imports[1] as $imported) {
+        if (!in_array($imported, SHARED_MODULES, true)) {
+            $undeclared[] = basename($jsFile) . ' imports ' . $imported;
+        }
+    }
+}
+ok(
+    $undeclared === array(),
+    'every module imported by another module is declared in SHARED_MODULES, so all of them get cache-busted',
+    implode(', ', $undeclared)
+);
 
 $hamburger = page_menu();
 ok(str_contains($hamburger, 'class="icon-btn"'), 'page_menu() renders the house 48px icon button');
