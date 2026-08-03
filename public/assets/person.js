@@ -550,7 +550,304 @@ function startReachOut() {
 /* END REGION: reminders */
 
 /* REGION: gifts — owned by I */
+
+/* The gift-ideas list.
+ *
+ * READING the list needs none of this — person.php renders every row. What this
+ * adds is the three interactions: adding without a page load, tap-to-edit, and
+ * swipe-to-delete with its five-second undo.
+ *
+ * THE COMPOSER IS RENDERED HIDDEN AND UNHIDDEN HERE, like R's "Change" above
+ * and P's "Edit tags" above that, and for a blunter reason than either: adding
+ * a gift idea needs a POST, person.php's POST handler belongs to P, and
+ * docs/CONTRACTS.md §1 gives I no way to add a case to it. A box that swallows
+ * what you type is worse than no box, so the box only appears once the thing
+ * that makes it work is running.
+ *
+ * NO REORDERING. Gift ideas sort newest-first and have no sort_order column
+ * (PLAN.md §4.6) — reorder.js is imported by nothing on this screen on purpose.
+ *
+ * The imports are down here rather than at the top of the file because the top
+ * of the file is P's. `import` is hoisted and legal anywhere at a module's top
+ * level, so this is the region rule and the module system agreeing rather than
+ * a trick.
+ */
+import { attachSwipeDelete } from './swipe.js';
+import { attachInlineEdit } from './inline-edit.js';
+
+const GIFT_TEXT_MAX = 500;   // gift_ideas.idea_text — see lib/contact.php
+
+startGifts();
+
+function startGifts() {
+  const card     = document.getElementById('person-gifts');
+  const list     = document.getElementById('person-gift-list');
+  const empty    = document.getElementById('person-gift-empty');
+  const composer = document.getElementById('person-gift-composer');
+  const input    = document.getElementById('person-gift-new');
+  if (!card || !list) { return; }
+
+  const personId = Number(card.dataset.id || 0);
+  if (personId <= 0) { return; }
+
+  /* id -> the row as the server described it when it was deleted. Held only for
+     the five seconds the undo snackbar is up: the row is already gone from the
+     database, and api/gift-restore.php needs the fields to put it back. Same
+     shape as the sibling app's wish list, for the same reason. */
+  const deleted = new Map();
+
+  attachSwipeDelete(list, {
+    /* Fires the moment the gesture completes, so the idea is gone from the
+       database before the snackbar appears. Undo is therefore a RESTORE. */
+    onDelete: (id) => apiPost('api/gift-delete.php', { id: Number(id) })
+      .then((response) => {
+        deleted.set(String(id), response.gift || null);
+        refresh();
+      }),
+
+    onUndo: (id) => {
+      const gift = deleted.get(String(id));
+      if (!gift) {
+        /* Nothing to restore from — a reload between the delete and the tap.
+           Rejecting is honest: swipe.js hides the row again and says it didn't
+           save, rather than leaving a row on screen that is not in the
+           database. */
+        return Promise.reject(new Error('nothing to restore'));
+      }
+      return apiPost('api/gift-restore.php', {
+        id: Number(gift.id),
+        person_id: personId,
+        idea_text: gift.idea_text,
+      }).then((response) => {
+        deleted.delete(String(id));
+        refresh();
+        /* Usually the id it went out with — gift_restore() keeps it so the list
+           sorts the same after a reload — but swipe.js adopts whatever comes
+           back, so a fallback insert is handled too. */
+        return response.id;
+      });
+    },
+
+    label: (row) => {
+      const text = row.querySelector('.row-text');
+      const idea = text ? text.textContent.trim() : '';
+      return idea === '' ? 'Deleted.' : 'Deleted “' + idea + '”';
+    },
+  });
+
+  attachInlineEdit(list, {
+    /* Resolving to the server's own string rather than to nothing: it trims and
+       caps at the column width, and the row should show what was stored rather
+       than what was typed. */
+    onSave: (id, text) => apiPost('api/gift-rename.php', {
+      id: Number(id),
+      idea_text: text,
+    }).then((response) => response.idea_text),
+    maxLength: GIFT_TEXT_MAX,
+  });
+
+  if (composer && input) {
+    composer.classList.remove('hidden');
+
+    composer.addEventListener('submit', async (event) => {
+      /* Only now is the plain POST given up — and there is nothing behind it on
+         this screen, which is why the form was hidden until this listener
+         existed. See the region comment above. */
+      event.preventDefault();
+
+      const idea = input.value.trim();
+      if (idea === '') { return; }
+
+      const button = composer.querySelector('.composer-add');
+      if (button) { button.disabled = true; }
+      /* Cleared first: the phone keyboard stays up and the next idea can be
+         typed while this one is in flight. Put back if the write fails. */
+      input.value = '';
+
+      const result = await apiTry('api/gift-add.php', {
+        person_id: personId,
+        idea_text: idea.slice(0, GIFT_TEXT_MAX),
+      });
+
+      if (button) { button.disabled = false; }
+
+      if (!result.ok) {
+        input.value = idea;
+        showSnackbar(errorMessage(result.error), { isError: true });
+        return;
+      }
+
+      list.prepend(buildGiftRow(result.data.gift));
+      refresh();
+      input.focus();
+    });
+  }
+
+  /** A row that matches what person.php renders, so the two cannot drift. */
+  function buildGiftRow(gift) {
+    const row = document.createElement('li');
+    row.className = 'list-row';
+    row.dataset.id = String(gift.id);
+
+    const slide = document.createElement('div');
+    slide.className = 'row-slide';
+
+    const text = document.createElement('span');
+    text.className = 'row-text';
+    /* textContent, never innerHTML: this is whatever was typed, and this is the
+       one place it re-enters the page without going through PHP's h(). */
+    text.textContent = gift.idea_text;
+    slide.append(text);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'row-del';
+    del.setAttribute('aria-label', 'Delete ' + gift.idea_text);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13');
+    svg.append(path);
+    del.append(svg);
+    slide.append(del);
+
+    row.append(slide);
+    return row;
+  }
+
+  /**
+   * The empty state, and the list's own border with it.
+   *
+   * Recomputed from the DOM rather than tracked, because three different things
+   * change the count and one of them is swipe.js dropping an <li> when its undo
+   * window expires — which happens inside another module with no callback to
+   * hang this off. A row mid-undo is still in the DOM but is not on the list.
+   *
+   * `.list` is a bordered, rounded box, so an emptied one is a stray rule under
+   * the "no gift ideas yet" line. `.list:empty` cannot help: the whitespace of
+   * an empty foreach is a text node.
+   */
+  function refresh() {
+    const live = Array.from(list.querySelectorAll('.list-row'))
+      .filter((row) => !row.classList.contains('is-removing')).length;
+
+    list.classList.toggle('hidden', live === 0);
+    if (empty) { empty.classList.toggle('hidden', live > 0); }
+  }
+
+  const observer = new MutationObserver(() => refresh());
+  observer.observe(list, { childList: true });
+  refresh();
+}
+
 /* END REGION: gifts */
 
 /* REGION: log — owned by I */
+
+/* Logging a conversation, and removing one that was logged by mistake.
+ *
+ * THE 1-TAP BUTTON IS THE APP'S DAILY ACTION and the note is optional: tapping
+ * "Logged today" with an empty box is one tap and writes a row with no note.
+ * Tapping it twice in one day writes two rows and moves last_contact_date
+ * nowhere — two conversations in one day are two conversations, and the cadence
+ * clock runs off the date (CLAUDE.md). Nothing here de-duplicates that.
+ *
+ * BOTH ACTIONS RELOAD THE PROFILE ON SUCCESS, which is the one thing worth
+ * arguing about here. Logging a contact changes three things this screen has
+ * already rendered: the last-contact line in P's identity region, the reach-out
+ * reminder's next date in R's (server-computed, from the last contact, by the
+ * same arithmetic the cron uses), and this history. Two of those are other
+ * tracks' markup, and the reminder's new date is not something this file could
+ * work out without re-implementing the cadence rules. Painting the parts it
+ * owns and leaving the rest stale would show a profile that was never true, so
+ * it re-renders instead — the same choice the edit form above makes, for the
+ * same reason.
+ *
+ * The failure path is why this is a fetch and not a form: a note typed and lost
+ * to a 500 is the only thing on this screen you cannot reconstruct.
+ */
+startContactLog();
+
+function startContactLog() {
+  const card     = document.getElementById('person-log');
+  const composer = document.getElementById('person-log-composer');
+  const note     = document.getElementById('person-log-note');
+  const list     = document.getElementById('person-log-list');
+  if (!card) { return; }
+
+  const personId = Number(card.dataset.id || 0);
+  if (personId <= 0) { return; }
+
+  const profileUrl = 'person.php?id=' + encodeURIComponent(String(personId));
+
+  if (composer && note) {
+    composer.classList.remove('hidden');
+
+    composer.addEventListener('submit', async (event) => {
+      /* Nothing is behind this form — see the region comment in person.php. */
+      event.preventDefault();
+
+      const button = composer.querySelector('.composer-add');
+      if (button) { button.disabled = true; }
+
+      const result = await apiTry('api/contact-log.php', {
+        person_id: personId,
+        note: note.value.trim(),
+      });
+
+      if (!result.ok) {
+        /* The note stays in the box. It is the one thing on this screen that
+           cannot be reconstructed from what is on screen. */
+        if (button) { button.disabled = false; }
+        showSnackbar(errorMessage(result.error), { isError: true });
+        return;
+      }
+
+      window.location.assign(profileUrl);
+    });
+  }
+
+  if (list) {
+    /* Delegated, matching every shared module in the app: one listener whatever
+       the list does. */
+    list.querySelectorAll('.tap-text').forEach((button) => button.classList.remove('hidden'));
+
+    list.addEventListener('click', async (event) => {
+      const button = event.target.closest('.tap-text');
+      if (!button || !list.contains(button) || button.disabled) { return; }
+
+      const row = button.closest('.list-row');
+      const id  = Number(row ? row.dataset.id || 0 : 0);
+      if (id <= 0) { return; }
+
+      /* A confirm, not an undo snackbar. There is no api/contact-restore.php:
+         a log entry is a dated record of something that happened, and CLAUDE.md
+         keeps the five-second undo on gift ideas and import drafts, where the
+         worst case is retyping a phrase. Deleting a person asks the same way,
+         a few lines up. */
+      const sure = window.confirm(
+        'Remove this from the contact history?\n\n'
+        + 'The last-contact date goes back to whatever is left. '
+        + 'It does not change any reminder you have set.'
+      );
+      if (!sure) { return; }
+
+      button.disabled = true;
+
+      const result = await apiTry('api/contact-delete.php', { id });
+      if (!result.ok) {
+        button.disabled = false;
+        showSnackbar(errorMessage(result.error), { isError: true });
+        return;
+      }
+
+      /* Reloaded rather than removed from the list: deleting the newest entry
+         moves last_contact_date, which P's identity region has already
+         rendered. Same reasoning as logging, above. */
+      window.location.assign(profileUrl);
+    });
+  }
+}
+
 /* END REGION: log */

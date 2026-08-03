@@ -488,9 +488,178 @@ screen_head($person['name'], $editButton . page_menu());
   <!-- END REGION: reminders -->
 
   <!-- REGION: gifts — owned by I -->
+<?php
+  /* Required HERE rather than beside the others at the top of the file, for the
+   * same reason R gives above: the top of the file is P's, and
+   * docs/CONTRACTS.md §1 gives I these two regions and nothing else. */
+  require_once __DIR__ . '/../lib/contact.php';
+
+  $gifts = gifts_for_person($id);
+?>
+  <?php /* NO DRAG HANDLES AND NO REORDERING. Gift ideas sort newest-first and
+           have no sort_order column — a decision (PLAN.md §4.6, CLAUDE.md), not
+           an omission. assets/reorder.js ships wired to nothing; if ordering
+           ever turns out to matter the module is already sitting there.
+
+           SWIPE-TO-DELETE IS RIGHT HERE, unlike on a person. Five seconds is
+           not a window in which you notice losing somebody's notes and years of
+           contact history; it is plenty for a phrase you can retype. */ ?>
+  <section class="card" id="person-gifts" data-id="<?= $id ?>">
+    <p class="hint">Gift ideas</p>
+
+    <?php /* Rendered hidden and unhidden by assets/person.js — the same swap P
+             uses for "Edit tags" and R for "Change", and here for a blunter
+             reason: THERE IS NO NO-SCRIPT WRITE PATH FOR THIS REGION. Adding a
+             gift idea needs a POST, person.php's POST handler is P's, and the
+             region rule gives I no way to add a case to it. So the composer is
+             a real <form> that a script turns into a fetch, and a browser with
+             no script is shown a list it can read rather than a box that
+             swallows what you type.
+
+             method and action are set even so, and the hidden action field with
+             them: it means a stray submit is a 303 straight back to this
+             profile rather than a GET that drops the id, and it means the day
+             P's handler grows a `case 'gift-add':` this works with no script at
+             all. Reported rather than done here — see the track's report. */ ?>
+    <form class="composer hidden" id="person-gift-composer"
+          method="post" action="person.php?id=<?= $id ?>">
+      <input type="hidden" name="action" value="gift-add">
+      <input
+        class="composer-input"
+        type="text"
+        name="idea_text"
+        id="person-gift-new"
+        placeholder="Add a gift idea"
+        aria-label="Add a gift idea"
+        autocomplete="off"
+        autocapitalize="sentences"
+        enterkeyhint="done"
+        maxlength="<?= GIFT_TEXT_MAX ?>">
+      <button class="composer-add" type="submit">Add</button>
+    </form>
+  </section>
+
+  <p class="empty<?= $gifts === array() ? '' : ' hidden' ?>" id="person-gift-empty">
+    No gift ideas yet.
+  </p>
+
+  <?php /* The <ul> is always rendered, and carries .hidden when it is empty
+           rather than being left out. `.list:empty` cannot do this job — the
+           whitespace an empty foreach leaves behind is a text node, so the
+           element is not empty and the CSS never matches, leaving a stray
+           rounded box under the "no gift ideas yet" line. It stays in the DOM
+           because assets/person.js attaches the swipe and the inline editor to
+           it once, by delegation, and needs a root that exists before the first
+           row does. */ ?>
+  <ul class="list<?= $gifts === array() ? ' hidden' : '' ?>" id="person-gift-list">
+<?php foreach ($gifts as $gift): ?>
+    <li class="list-row" data-id="<?= (int) $gift['id'] ?>">
+      <div class="row-slide">
+        <span class="row-text"><?= h($gift['idea_text']) ?></span>
+        <?php /* The pointer-only backup for the swipe, wired by swipe.js to the
+                 identical delete path. There is no gesture with a mouse, and
+                 without this a gift idea would be undeletable on a desktop. */ ?>
+        <button class="row-del" type="button" aria-label="Delete <?= h($gift['idea_text']) ?>">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+        </button>
+      </div>
+    </li>
+<?php endforeach; ?>
+  </ul>
   <!-- END REGION: gifts -->
 
   <!-- REGION: log — owned by I -->
+<?php
+  /* Idempotent, and here so this region stands on its own rather than on the
+   * gifts region above happening to be rendered first. */
+  require_once __DIR__ . '/../lib/contact.php';
+
+  $logEntries = contact_log_for_person($id);
+?>
+  <section class="card" id="person-log" data-id="<?= $id ?>">
+    <p class="hint">Contact log</p>
+
+    <?php /* ONE TAP LOGS A CONTACT, and the note is optional. Requiring a note
+             is how a logging button stops being used, and an app nobody logs
+             into knows nothing about when you last called anyone (schema.sql).
+
+             Tapping it twice in one day writes TWO rows and leaves
+             last_contact_date alone. That is correct and is not de-duplicated
+             anywhere: two conversations in one day are two conversations, and
+             the cadence clock runs off the date (CLAUDE.md).
+
+             Hidden until assets/person.js unhides it, for the same reason as
+             the gift composer above — see that comment. This one costs more:
+             with no script there is no way to log a contact from this screen,
+             and the dashboard's 1-tap button needs a script too, so the app's
+             daily action needs one. The <noscript> below says so out loud
+             rather than leaving a card with nothing in it. */ ?>
+    <form class="composer hidden" id="person-log-composer"
+          method="post" action="person.php?id=<?= $id ?>">
+      <input type="hidden" name="action" value="contact-log">
+      <input
+        class="composer-input"
+        type="text"
+        name="note"
+        id="person-log-note"
+        placeholder="What did you talk about? (optional)"
+        aria-label="An optional note about this conversation"
+        autocomplete="off"
+        autocapitalize="sentences"
+        enterkeyhint="done"
+        maxlength="<?= CONTACT_NOTE_MAX ?>">
+      <button class="composer-add" type="submit">Logged today</button>
+    </form>
+
+    <noscript>
+      <p class="hint">Logging a conversation needs JavaScript. The history below reads without it.</p>
+    </noscript>
+  </section>
+
+  <?php /* <details>, not a div and a click handler: it opens with no script, it
+           is keyboard operable, and the accessibility semantics come free
+           (docs/CONTRACTS.md §4). COLLAPSED BY DEFAULT — the history is the
+           answer to "when did we last talk about the wedding", which is a
+           question you ask occasionally, and forty rows open by default would
+           push the delete control off the bottom of a phone screen. */ ?>
+  <details class="accordion" id="person-log-history">
+    <summary class="accordion-head">
+      History <span class="accordion-count" id="person-log-count"><?= count($logEntries) ?></span>
+    </summary>
+    <div class="accordion-body">
+      <p class="empty<?= $logEntries === array() ? '' : ' hidden' ?>" id="person-log-empty">
+        Nothing logged yet.
+      </p>
+
+      <ul class="list<?= $logEntries === array() ? ' hidden' : '' ?>" id="person-log-list">
+<?php foreach ($logEntries as $entry): ?>
+<?php $lines = contact_log_lines($entry, $today); ?>
+        <li class="list-row" data-id="<?= (int) $entry['id'] ?>">
+          <div class="row-slide">
+            <?php /* .row-body so the date is a SIBLING of .row-text rather than
+                     inside it. Nothing here is inline-editable — a log entry is
+                     a dated record of something that happened, not a phrase you
+                     revise — but the two-line shape is the same one. */ ?>
+            <div class="row-body">
+              <span class="row-text"><?= h($lines['text']) ?></span>
+<?php if ($lines['sub'] !== ''): ?>
+              <span class="row-sub"><?= h($lines['sub']) ?></span>
+<?php endif; ?>
+            </div>
+
+            <?php /* NOT A SWIPE AND NOT A .row-del. CLAUDE.md keeps
+                     swipe-to-delete on gift ideas and import drafts, where the
+                     worst case is retyping a phrase; there is no
+                     contact-restore endpoint and no undo, so this asks first
+                     instead. Hidden until the script can wire it up, like the
+                     composer above. */ ?>
+            <button class="tap-text danger hidden" type="button">Remove</button>
+          </div>
+        </li>
+<?php endforeach; ?>
+      </ul>
+    </div>
+  </details>
   <!-- END REGION: log -->
 
   <!-- REGION: danger — owned by P -->
