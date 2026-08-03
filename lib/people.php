@@ -43,6 +43,12 @@
 
 declare(strict_types=1);
 
+/* Phase 2B's, for the two birthday hooks below and nothing else. Required here
+ * rather than by each caller so that no path can write a birthday without
+ * reconciling its reminder — which is the failure the two-place reconciliation
+ * in schema.sql exists to make impossible. */
+require_once __DIR__ . '/reminders.php';
+
 /* Column widths, mirrored from schema.sql so the app truncates rather than
  * letting MySQL's strict mode reject a whole INSERT over one long paste. notes
  * is TEXT and has no ceiling worth mirroring — see people_clean_notes(). */
@@ -744,8 +750,9 @@ function people_add(array $fields, string $today): int
      *     reminders_reconcile_birthday($id, $today);
      *
      * $today is already a parameter so that landing it needs no signature
-     * change and no edit to any caller. Nothing else in this file is R's.
-     * -------------------------------------------------------------------- */
+     * change and no edit to any caller. Nothing else in this file is R's. */
+    reminders_reconcile_birthday($id, $today);
+    /* -------------------------------------------------------------------- */
 
     return $id;
 }
@@ -796,8 +803,9 @@ function people_save(int $id, array $fields, string $today): bool
      *     reminders_reconcile_birthday($id, $today);
      *
      * and it must handle all three: create, recompute, delete. See the
-     * people_add() hook above and schema.sql's note on the reminders table.
-     * -------------------------------------------------------------------- */
+     * people_add() hook above and schema.sql's note on the reminders table. */
+    reminders_reconcile_birthday($id, $today);
+    /* -------------------------------------------------------------------- */
 
     return true;
 }

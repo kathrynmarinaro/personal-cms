@@ -348,6 +348,205 @@ function errorMessage(err) {
  * =========================================================================== */
 
 /* REGION: reminders — owned by R */
+
+/* The reach-out reminder control.
+ *
+ * READING the reminder needs none of this — person.php renders the sentence
+ * server-side. What this adds is the only way to CHANGE it, which is the one
+ * place on this screen that does not degrade to a plain form: person.php's POST
+ * handler is P's, so there is no action for a no-script form here to post, and
+ * a second write path invented for one card would be a pattern nothing else in
+ * the app follows. The controls are therefore rendered hidden in the markup and
+ * unhidden here — the same swap the tag picker above does, and for the same
+ * reason: a button that opens nothing is worse than no button.
+ *
+ * The BIRTHDAY reminder is deliberately not editable from here. It is
+ * materialized from the person's birthday and reconciled by people_save() and
+ * by every cron run (PLAN.md §4.5), so anything set here would be silently
+ * corrected within a day. Change the birthday instead.
+ */
+startReachOut();
+
+function startReachOut() {
+  const card = document.getElementById('person-reminders');
+  if (!card) { return; }
+
+  const personId = Number(card.dataset.id || 0);
+  const state    = document.getElementById('person-reminder-state');
+  const opener   = document.getElementById('person-reminder-edit');
+  const dateForm = document.getElementById('person-reminder-date-form');
+  const dateInput = document.getElementById('person-reminder-date');
+  const dateCancel = document.getElementById('person-reminder-date-cancel');
+  if (personId <= 0 || !state || !opener) { return; }
+
+  /* The cadences the sheet offers. Roughly monthly, quarterly, half-yearly,
+     yearly — the shapes an actual relationship has. Anything else is reachable
+     as a one-off date, and a free-text "every N days" box would be a number pad
+     in a picker for a choice nobody makes twice. */
+  const PRESETS = [30, 60, 90, 180, 365];
+
+  /* The reminder as the server last described it, so the picker opens on the
+     right option. A broken JSON block costs the .is-current highlight and
+     nothing else. */
+  let current = null;
+  try {
+    const raw = document.getElementById('person-reminder-data');
+    const data = raw ? JSON.parse(raw.textContent || '{}') : {};
+    current = data.reach_out || null;
+  } catch {
+    current = null;
+  }
+
+  opener.classList.remove('hidden');
+  opener.addEventListener('click', openSheet);
+
+  if (dateForm && dateInput) {
+    dateForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (dateInput.value) { save({ due_date: dateInput.value }); }
+    });
+  }
+  if (dateCancel && dateForm) {
+    dateCancel.addEventListener('click', () => dateForm.classList.add('hidden'));
+  }
+
+  /** The cadence choices, with any stored one that isn't a preset folded in. */
+  function cadences() {
+    const stored = current && current.recurrence_interval_days
+      ? Number(current.recurrence_interval_days)
+      : null;
+    const all = PRESETS.slice();
+    if (stored && !all.includes(stored)) { all.push(stored); }
+    return all.sort((a, b) => a - b);
+  }
+
+  /**
+   * The cadence picker.
+   *
+   * IT CLOSES ON A CHOICE, unlike the tag sheet above. A tag is a toggle and
+   * putting somebody in three groups should be three taps; a reminder is one
+   * schedule and picking a second one would only undo the first.
+   */
+  function openSheet() {
+    const sheet = document.createElement('div');
+    sheet.className = 'sheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'true');
+    sheet.setAttribute('aria-label', 'Choose a reach-out reminder');
+
+    const panel = document.createElement('div');
+    panel.className = 'sheet-panel';
+
+    const isCadence = Boolean(current && current.recurrence_interval_days);
+
+    cadences().forEach((days) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.textContent = 'Every ' + days + ' days';
+      if (isCadence && Number(current.recurrence_interval_days) === days) {
+        option.classList.add('is-current');
+      }
+      option.addEventListener('click', () => {
+        close();
+        save({ cadence_days: days });
+      });
+      panel.append(option);
+    });
+
+    const onDate = document.createElement('button');
+    onDate.type = 'button';
+    onDate.textContent = 'Just once, on a date';
+    if (current && !current.recurrence_interval_days) { onDate.classList.add('is-current'); }
+    onDate.addEventListener('click', () => {
+      close();
+      /* The sheet hands off to the date field rather than trying to hold a
+         picker itself: a native <input type="date"> is the phone's own wheel,
+         and the stylesheet has no date component to build one out of. */
+      if (dateForm && dateInput) {
+        dateForm.classList.remove('hidden');
+        dateInput.focus();
+      }
+    });
+    panel.append(onDate);
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.textContent = 'No reminder';
+    if (!current) { clear.classList.add('is-current'); }
+    clear.addEventListener('click', () => {
+      close();
+      remove();
+    });
+    panel.append(clear);
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'sheet-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', close);
+    panel.append(cancel);
+
+    sheet.append(panel);
+
+    /* Tapping the backdrop closes. The check is on the sheet itself rather than
+       "not the panel", so a tap that starts on a button and drifts doesn't
+       dismiss. */
+    sheet.addEventListener('click', (event) => {
+      if (event.target === sheet) { close(); }
+    });
+
+    document.addEventListener('keydown', onKey);
+    document.body.append(sheet);
+    (panel.querySelector('button') || cancel).focus();
+
+    function onKey(event) {
+      if (event.key === 'Escape') { close(); }
+    }
+
+    function close() {
+      document.removeEventListener('keydown', onKey);
+      sheet.remove();
+      // Focus goes back to what opened it, or it lands on <body> and the next
+      // Tab starts from the top of the page.
+      opener.focus();
+    }
+  }
+
+  /* NOT optimistic, unlike the tag pills. The sentence this paints is "every 60
+     days, next Friday", and only the server knows the second half — it counts
+     from the last contact, not from today, using the same tested arithmetic the
+     cron uses. Guessing it here and correcting it a moment later would show a
+     date that was never true. */
+  async function save(body) {
+    const result = await apiTry('api/reminder-save.php', Object.assign({ person_id: personId }, body));
+    if (!result.ok) {
+      showSnackbar(errorMessage(result.error), { isError: true });
+      return;
+    }
+    current = result.data.reminder;
+    state.textContent = result.data.label;
+    if (dateForm) { dateForm.classList.add('hidden'); }
+  }
+
+  async function remove() {
+    const result = await apiTry('api/reminder-delete.php', { person_id: personId });
+    if (!result.ok) {
+      showSnackbar(errorMessage(result.error), { isError: true });
+      return;
+    }
+    current = null;
+    /* Rebuilt rather than assigned as text, so "no reminder" keeps the same
+       .muted grey the server rendered it in — a plain sentence here would read
+       as a reminder that says the words "No reach-out reminder". */
+    state.textContent = '';
+    const none = document.createElement('span');
+    none.className = 'muted';
+    none.textContent = 'No reach-out reminder';
+    state.append(none);
+    if (dateForm) { dateForm.classList.add('hidden'); }
+  }
+}
+
 /* END REGION: reminders */
 
 /* REGION: gifts — owned by I */

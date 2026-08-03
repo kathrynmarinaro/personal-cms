@@ -403,6 +403,88 @@ screen_head($person['name'], $editButton . page_menu());
   <!-- END REGION: tags -->
 
   <!-- REGION: reminders — owned by R -->
+<?php
+  /* Required HERE rather than beside the others at the top of the file, because
+   * the top of the file is P's and docs/CONTRACTS.md §1 gives R this region and
+   * nothing else. It is already loaded in practice — lib/people.php requires it
+   * for the birthday hook — and require_once makes leaning on that unnecessary
+   * rather than merely lucky. */
+  require_once __DIR__ . '/../lib/reminders.php';
+
+  $reminders       = reminders_for_person($id);
+  $reachOut        = $reminders[REMINDER_REACH_OUT] ?? null;
+  $birthdayRemind  = $reminders[REMINDER_BIRTHDAY] ?? null;
+?>
+  <?php /* SETTING a reminder needs the script; READING one does not.
+           Everything else on this screen degrades to a plain form, and this
+           deliberately does not: public/person.php's POST handler is P's, so
+           there is no action for a no-script form here to post, and inventing a
+           second write path for one card would be a pattern nobody else follows.
+           So the state is server-rendered and the controls are rendered hidden
+           and unhidden by assets/person.js — the same swap P uses for "Edit
+           tags", and for the same reason: a button that opens nothing is worse
+           than no button. */ ?>
+  <section class="card" id="person-reminders" data-id="<?= $id ?>"
+           data-default-cadence="<?= (int) reminders_default_cadence() ?>"
+           data-today="<?= h($today) ?>">
+    <div class="row-between">
+      <p class="hint">Reach out</p>
+      <button class="link-btn hidden" type="button" id="person-reminder-edit">Change</button>
+    </div>
+
+    <?php /* One line, and it says which of the three states this person is in.
+             A cadence and a one-off are different things and must not read the
+             same: "Every 60 days" is a promise about the future, "Once" is a
+             single appointment that disappears when it is kept. */ ?>
+    <p id="person-reminder-state">
+<?php if ($reachOut === null): ?>
+      <span class="muted">No reach-out reminder</span>
+<?php else: ?>
+      <?= h(reminders_label($reachOut, $today)) ?>
+<?php endif; ?>
+    </p>
+
+    <?php /* The one-off date picker, revealed by the sheet's "On a date" option
+             and hidden again on cancel. A real <input type="date"> so the phone
+             offers its own wheel — there is no date component in the stylesheet
+             and writing one would be a new component, which docs/CONTRACTS.md
+             says to report rather than add. */ ?>
+    <form class="stack hidden" id="person-reminder-date-form">
+      <label class="field">
+        <span>Remind me on</span>
+        <input type="date" id="person-reminder-date" value="<?= h($today) ?>">
+      </label>
+      <div class="row">
+        <button class="btn-primary" type="submit">Set reminder</button>
+        <button class="btn-secondary" type="button" id="person-reminder-date-cancel">Cancel</button>
+      </div>
+    </form>
+
+    <hr class="rule">
+
+    <?php /* The birthday reminder is READ-ONLY here on purpose. It is
+             materialized from the three birth_* columns and reconciled by
+             people_save() and again by every cron run (PLAN.md §4.5), so a
+             control that edited this row would be silently corrected within a
+             day. The way to change it is the pencil at the top of the screen.
+             Saying so out loud is what stops it looking like a missing feature. */ ?>
+<?php if ($birthdayRemind !== null): ?>
+    <p class="hint">
+      Birthday reminder <?= h(fmt_date($birthdayRemind['next_due_date'], 'F j')) ?> —
+      <?= (int) reminders_lead_days() ?> days before. It follows the birthday above.
+    </p>
+<?php else: ?>
+    <p class="hint">No birthday recorded, so there is no birthday reminder.</p>
+<?php endif; ?>
+  </section>
+
+  <?php /* What the picker needs to open on the right option, as data rather
+           than as values scraped back out of the sentence above. A JSON
+           <script> because there is no build step to import a module from. */ ?>
+  <script type="application/json" id="person-reminder-data"><?= json_encode(
+      array('reach_out' => $reachOut),
+      JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+  ) ?></script>
   <!-- END REGION: reminders -->
 
   <!-- REGION: gifts — owned by I -->
