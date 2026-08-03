@@ -2,10 +2,14 @@
 /* Assemble the FTP bundle: the app, laid out the way it has to sit on
  * Hostinger, as a directory and a zip of that directory.
  *
- * THIS SCRIPT DELIBERATELY FAILS UNTIL THE APP IS FINISHED. Its manifests
- * name DEPLOY.txt and public/index.php, which Phase 3 and Phase 1 write. A
+ * THIS SCRIPT DELIBERATELY FAILED UNTIL THE APP WAS FINISHED. Its manifests
+ * named DEPLOY.txt and public/index.php before either existed, because a
  * packaging tool that cheerfully produces a bundle with no screens in it is a
- * tool that lets you upload one.
+ * tool that lets you upload one. Phase 3 wrote the last of them; the manifest
+ * now also names the pieces that make reminders actually leave the building —
+ * public/cron.php, tools/cron-reminders.php and the three vendored PHPMailer
+ * files — because a bundle missing any of those deploys an app that looks
+ * completely healthy and never sends anything.
  *
  * Deployment here is a person dragging files into a file manager, so the
  * failure modes are human ones. This script exists to remove the three that
@@ -149,6 +153,27 @@ function main(): void
 
     if (!is_file($out . '/public/index.php')) {
         fail('public/index.php is missing');
+    }
+
+    /* The URL-fetch cron. On a plan with no SSH this is the ONLY way the daily
+     * job ever runs, and a bundle without it deploys an app whose reminders
+     * silently never fire — which is the one failure this app cannot survive
+     * and cannot report. tools/cron-reminders.php ships too, inside tools/,
+     * for the plans that do have a command cron. */
+    if (!is_file($out . '/public/cron.php')) {
+        fail('public/cron.php is missing — a plan with no SSH would have no way to run the cron');
+    }
+    if (!is_file($out . '/tools/cron-reminders.php')) {
+        fail('tools/cron-reminders.php is missing — there would be no daily job to run');
+    }
+
+    /* Vendored PHPMailer, three plain files, required directly. No Composer and
+     * no autoloader is the point; a bundle missing them is an app that cannot
+     * send a single reminder and says so only in error_log. */
+    foreach (array('PHPMailer.php', 'SMTP.php', 'Exception.php') as $vendored) {
+        if (!is_file($out . '/lib/vendor/PHPMailer/' . $vendored)) {
+            fail('lib/vendor/PHPMailer/' . $vendored . ' is missing — no email can be sent without it');
+        }
     }
 
     /* A .vcf in the bundle means somebody's address book is about to be zipped

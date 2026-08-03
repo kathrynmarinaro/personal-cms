@@ -1,0 +1,343 @@
+PERSONAL CRM — DEPLOY CHECKLIST
+===============================
+
+Birthdays, reach-out reminders, gift ideas, a contact log, and a vCard
+importer to fill it. Three tabs: Today, People, Add. PHP + MySQL, no
+build step.
+
+Rebuild this bundle any time with:  php tools/build-deploy.php
+
+Read the whole thing once before you start. Steps 2, 3 and 5 each have a
+way of failing that looks like nothing happening.
+
+
+WHERE THE FILES GO
+------------------
+
+Upload the CONTENTS of this bundle into the folder your (sub)domain
+points at. On Hostinger a subdomain is usually a folder under
+public_html, so for crm.example.com that is:
+
+    public_html/crm/
+        .htaccess             <- the shim; see below. MUST be here
+        config.php            <- you create this in step 2
+        schema.sql
+        lib/                  <- includes lib/vendor/PHPMailer (3 files)
+        tools/
+        uploads/              <- must exist, and must stay denied
+        public/               <- the app's public files
+
+>> THE FOLDER MUST BE CALLED public — NOT public_html.
+
+   The .htaccess at the top level is a document-root shim: Hostinger
+   points the subdomain at the whole app folder and won't let you move
+   the document root down, so that file rewrites every request into
+   public/ BY NAME and denies everything that must never be served.
+
+   Rename public/ and the site is a 404 with nothing in any log to
+   explain it — Apache rewrites into a directory that isn't there, so PHP
+   never runs and never gets a chance to complain. If you see a bare 404
+   on a fresh upload, check this first.
+
+lib/, tools/, uploads/, config.php and schema.sql are all inside the
+served folder, which is why that .htaccess matters so much: it is the
+only thing keeping your database password, your Gmail app password and
+your uploaded contacts file from being fetchable over HTTP. Delete
+Hostinger's default.php placeholder if it is there.
+
+BETTER, IF THE HOST EVER ALLOWS IT: point the document root directly at
+.../crm/public. The private folders are then genuinely outside the
+served tree instead of being denied inside it, and the top-level
+.htaccess becomes unnecessary. The shim is the fallback for when that
+setting is locked, which on Hostinger it usually is.
+
+>> TURN ON "SHOW HIDDEN FILES" in the file manager BEFORE AND AFTER
+   uploading. There are FOUR .htaccess files in here:
+
+       ./.htaccess    lib/.htaccess    tools/.htaccess    uploads/.htaccess
+
+   File managers hide dotfiles by default, so it is very easy to upload
+   without them, see the site working perfectly, and never notice that
+   your config is downloadable. After uploading, check all four arrived.
+
+   uploads/.htaccess is the one to check twice. An uploaded .vcf is the
+   name, phone number, email address and home address of everyone in
+   your phone, in plain text, under a filename the phone chose and an
+   attacker can guess. The app deletes it the moment it has been parsed —
+   but not on the run where the parse threw, which is exactly the run
+   nobody is watching.
+
+
+1. DATABASE
+   hPanel -> Databases -> create a database and a user. Note the name,
+   user and password. Hostinger PREFIXES BOTH with your account id, so
+   they come out as u123456_crm and u123456_crm, not the bare names in
+   config.example.php.
+
+   Load the schema: hPanel -> phpMyAdmin -> Import -> schema.sql
+
+   This creates ten tables and seeds exactly one thing: the five preset
+   relationship tags (Family, Close Friend, Friend, Colleague,
+   Acquaintance). No people, no reminders. All three tabs start empty.
+
+   All five presets are deletable. is_preset only tells the interface
+   whether to offer a delete control; nothing else treats them as
+   special.
+
+
+2. CONFIG
+   Rename  config.example.php  ->  config.php
+   Fill in the db block: name, user, pass. Host stays 'localhost'.
+
+   >> SET 'timezone' TO THE ZONE YOU LIVE IN. It is the highest-
+      consequence value in the file and it defaults to America/Chicago.
+      This whole app is made of dates — "due today", "seven days before
+      a birthday", "last contacted 62 days ago" — and Hostinger's PHP
+      and MySQL defaults are configured independently, neither of them
+      guaranteed to be yours. A one-day skew is not a subtle bug here:
+      it is birthday cards arriving late, every time, with nothing on
+      screen to explain it. A named zone, not an offset; DST is then
+      handled for you.
+
+   Then set your password. Generate the hash — never store the password
+   itself — by running this on your own machine:
+
+       php tools/make-hash.php
+
+   Paste the whole output into config.php as 'password_hash'. It starts
+   with $2y$ and is about 60 characters.
+
+   >> DO THIS BEFORE POINTING A DOMAIN AT THE APP.
+
+      Left as CHANGE_ME the gate FAILS OPEN: every screen is reachable
+      by anyone who finds the URL. That is deliberate and it matches
+      every app in this suite — an app with no hash cannot authenticate
+      anybody, so refusing entry would lock YOU out with no way back in.
+
+      AN UNCONFIGURED DEPLOY IS A PUBLIC DEPLOY, and it matters more
+      here than anywhere else in the suite. A leaked grocery list is
+      embarrassing. THIS DATABASE IS EVERYONE YOU KNOW: their full
+      names, their phone numbers, their email addresses, their HOME
+      ADDRESSES, their birthdays, and a dated log of every time you
+      spoke to them. Published, that is a stalking kit for other
+      people's lives, assembled by you, and there is no taking it back
+      once it has been crawled.
+
+      Set the hash first. Check you get a login screen. Only then point
+      a domain at it.
+
+   This app has its OWN session cookie ('personalcrm'), so signing in or
+   out here never disturbs the RSS Reader or Grocery on the same host.
+
+
+3. EMAIL
+   Reminders arrive by email and nothing else. If SMTP is wrong the app
+   looks completely healthy — the dashboard is right, the reminders are
+   right, and the mail simply never comes.
+
+   In the smtp block of config.php:
+
+       'user'       => 'you@gmail.com',
+       'pass'       => the APP PASSWORD from step 3b,
+       'from_email' => 'you@gmail.com',      <- MUST EQUAL 'user'
+       'to'         => 'you@gmail.com',      <- where reminders go
+
+   3a. Turn on 2-factor authentication on the Google account. Without
+       it there is no app-password screen to get to.
+
+   3b. Google Account -> Security -> 2-Step Verification -> App
+       passwords. Make one for "Mail". It is 16 characters with spaces
+       in it; paste it with or without the spaces, both work.
+
+       >> NOT THE ACCOUNT PASSWORD. Google stopped accepting account
+          passwords for SMTP in 2022. The account password will fail
+          with "Username and Password not accepted" and nothing else.
+
+   3c. >> from_email MUST BE THE SAME ADDRESS AS user.
+
+       Gmail rewrites or outright rejects a From address it has not
+       authorized, and the bounce is SILENT from this app's point of
+       view: the send succeeds, the app records a delivery, and the
+       mail never arrives. It is the single most common way this setup
+       fails and the only one that looks like success from every angle
+       inside the app. tools/send-test-email.php refuses to send if the
+       two disagree.
+
+   3d. Prove it, from the domain folder (the one holding lib/):
+
+           php tools/send-test-email.php
+
+       It prints the settings, checks them, sends one real message
+       through the same code the cron uses, and exits non-zero if
+       anything went wrong. Then LOOK AT YOUR PHONE. If it is not there
+       in a minute, check spam — the first message from a new sender is
+       the one most likely to be filed there, and every message after it
+       inherits whatever you do with that one.
+
+       No SSH? See step 4's note about running a tools/ script by hand.
+
+   OPTIONAL, and worth the thirty seconds: add
+
+       'app_url' => 'https://crm.example.com',
+
+   to config.php as a top-level key. The reminder emails link straight
+   to the person's profile, and a command cron has no request to work
+   the address out from — without it the email names the screen
+   (person.php?id=12) instead of linking to it. Everything else works
+   identically either way.
+
+
+4. THE CRON
+   Once a day, early morning. It reconciles every birthday reminder,
+   finds everything due, and emails once per reminder per due date.
+
+   Nothing else runs it. No cron, no reminders — the dashboard still
+   works and still shows you who is overdue, but only if you open it.
+
+   TWO WAYS IN. Use whichever your plan gives you.
+
+   4a. COMMAND CRON (needs SSH or hPanel's "cron jobs" with a command
+       field). This is the better one: it has no HTTP timeout and no
+       token to leak.
+
+           php /home/u123456/domains/crm.example.com/public_html/crm/tools/cron-reminders.php
+
+       Daily, around 06:00 in your configured timezone. Hostinger's
+       scheduler mails you anything the job writes to stdout or stderr,
+       and the job exits non-zero if any send failed.
+
+       Leave 'cron' => 'token' EMPTY in config.php if you use this.
+       public/cron.php then refuses every request rather than being a
+       second, unwatched way in.
+
+   4b. URL FETCH (for plans that only offer a URL). tools/ is denied
+       over HTTP, so there is a thin wrapper in public/:
+
+       Generate a token on your own machine:
+
+           php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
+
+       Put it in config.php as 'cron' => array('token' => '...'), and
+       point the scheduler at:
+
+           https://crm.example.com/cron.php?token=THE_TOKEN_YOU_GENERATED
+
+       Same code, same result, and it answers with a 500 if any send
+       failed. A wrong or missing token gets a 404 — not a 403, because
+       a 403 confirms the endpoint is there and worth guessing at.
+
+       THAT URL IS A PASSWORD. It will sit in the scheduler's config in
+       plain text and in any log the fetcher keeps. Do not paste it into
+       anything you would not paste config.php into.
+
+   If you have no SSH and need to run a tools/ script once (step 3d, for
+   example), copy it temporarily into public/, visit it in a browser,
+   and DELETE IT AGAIN. tools/.htaccess is what normally prevents that,
+   which is the point of it. Every script in tools/ also refuses to run
+   unless it is on the command line, so a forgotten copy is inert rather
+   than dangerous — but delete it anyway.
+
+
+5. THE IMPORT LIMIT — TWO NUMBERS THAT MUST AGREE
+   Import (hamburger menu -> Import contacts) takes a .vcf exported from
+   your phone. Two separate limits apply to it:
+
+       config.php   'import' => 'max_upload_mb'   default 10
+       PHP itself   upload_max_filesize           often 2M on shared hosting
+
+   >> THE SMALLER ONE WINS, AND IT IS PHP'S. The Import screen reports
+      the smaller of the two, so a config value above the PHP limit is
+      a lie printed on the screen: it promises 10 MB and PHP refuses at
+      2 MB.
+
+   Fix it in ONE of two directions:
+
+       RAISE PHP'S. hPanel -> Advanced -> PHP Configuration ->
+       upload_max_filesize (and post_max_size, which must be at least as
+       large). 16M is plenty.
+
+       OR LOWER YOURS. Set max_upload_mb to whatever PHP actually
+       allows, so the screen tells the truth.
+
+   Why the file is big at all: a 400-contact export can be 30 MB of
+   which 29 MB is base64 contact photos. The app drops photos at parse
+   time and never stores them, but they are still in the file you
+   upload.
+
+   >> RAISE post_max_size WITH IT, not just upload_max_filesize. A file
+      over upload_max_filesize comes back with an error the app can
+      report. A request over post_max_size arrives with $_FILES AND
+      $_POST BOTH EMPTY and no error code anywhere: the form appears to
+      have been submitted and nothing at all happens. The app detects
+      that case and says so, but only because it knows both numbers —
+      which is why they have to be right.
+
+   Nothing is imported until you tap it. The review queue is staged on
+   purpose and there is no "Add all" button — that would defeat the
+   point of staging. Swipe a draft away to skip it.
+
+
+6. CHECK IT
+   Visit the site. You should get the login screen. If you get the app
+   instead, go back to step 2 — the hash is not set.
+
+   Then, on your PHONE, because that is the only device this was built
+   for:
+
+     - add a person with a birthday -> the Today tab shows it seven days
+                                       before
+     - tap a row's text             -> it becomes editable in place
+     - tap "Logged today"           -> the reach-out reminder resets and
+                                       the row leaves the dashboard
+     - swipe a gift idea left       -> it deletes, with 5 seconds to undo
+     - import a .vcf                -> drafts stage for review, one tap
+                                       each
+
+   PEOPLE ARE NOT SWIPE-DELETABLE, deliberately. A person carries notes,
+   gift ideas and years of contact history, and the undo window is five
+   seconds long. Deleting a person is a button on their profile with a
+   confirmation.
+
+   A REACH-OUT STAYS OVERDUE UNTIL YOU LOG A CONTACT. The cron emails
+   once and does not move the due date, so the dashboard accumulates and
+   the day count climbs. That is the app working, not a bug. Only
+   logging an actual contact clears it.
+
+
+7. HOME SCREEN
+   Add it via Apple Shortcuts, the same as the other apps. There is no
+   PWA and no service worker here, deliberately.
+
+
+WHAT IS NOT IN THIS BUNDLE
+--------------------------
+
+The test suite (tools/run-tests.php, tools/test-harness.php,
+tools/tests-*.php), the test fixtures, docs/ and CLAUDE.md. None of them
+run on the server. They are in the git repository, which is where they
+belong.
+
+config.php is excluded too, and the build refuses to run if it ever ends
+up in here — it holds the database password, the Gmail app password and
+the cron token.
+
+lib/vendor/PHPMailer IS included: three plain files, PHPMailer 6.9.3,
+required directly. No Composer, no autoloader, nothing to install. They
+upload like every other file.
+
+
+TWO THINGS NOBODY HAS CHECKED
+-----------------------------
+
+schema.sql has never been loaded into a real MySQL. It was developed and
+tested against a SQLite translation, because the build environment had
+no MySQL and no Docker. The automated assertions pass against that
+translation, which proves the app's logic — it does not prove MySQL's
+parser, its utf8mb4 index lengths, or its ENUM handling. Step 1 is
+therefore the real test. If phpMyAdmin rejects the import, the error it
+prints will name the exact line, and it will be a syntax detail rather
+than a design problem.
+
+No email has ever actually left this app. The mailer is exercised
+against its own message-building, not against a live SMTP server. Step
+3d is the real test, and it is the reason that script exists.

@@ -84,6 +84,22 @@ return array(
      */
     'public_dir' => '',
 
+    /* ---- public address ----------------------------------------------
+     * Where this app lives, e.g. 'https://crm.example.com'. Used only to
+     * build the "open this person" link inside a reminder email.
+     *
+     * Optional, and it degrades in three steps rather than breaking: this
+     * value, then the scheme and host of the current request, then a bare
+     * person.php?id=N.
+     *
+     * The middle step is why this matters. A cron run from the COMMAND LINE
+     * has no request to read a host from, so a command cron with this unset
+     * sends a link that names the right screen and cannot be tapped. A
+     * URL-fetch cron happens to work without it, which is exactly the kind
+     * of difference that shows up months later on the wrong plan.
+     */
+    'app_url' => '',
+
     /* ---- reminders --------------------------------------------------
      * Read in ONE place each, so the cron and the dashboard cannot
      * disagree about them. Same reasoning as Grocery's grace_seconds.

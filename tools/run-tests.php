@@ -1228,11 +1228,25 @@ foreach (array('timezone', 'reminders', 'smtp', 'import', 'cron') as $key) {
 }
 is_same(cfg('smtp.from_email'), cfg('smtp.user'), 'SMTP from_email matches user — Gmail silently rejects a From it has not authorized');
 
-/* House style, checked mechanically because it is the thing that erodes. */
+/* House style, checked mechanically because it is the thing that erodes.
+ *
+ * lib/vendor/ IS EXEMPT, and it is the only exemption. The three PHPMailer
+ * files in there are somebody else's code, vendored verbatim (PLAN.md §7.1);
+ * they use short arrays and do not declare strict_types, and the correct
+ * response to that is to leave them byte-identical so the next upstream release
+ * can be dropped in without a diff to read. Restyling third-party code to
+ * satisfy a house rule is how you end up maintaining a fork of it.
+ *
+ * The exemption is guarded from the other side: tools/tests-delivery.php
+ * asserts that lib/vendor/PHPMailer holds exactly those three files, so nothing
+ * of ours can quietly move in under it. */
 $phpFiles = array();
 foreach (array('lib', 'public', 'tools') as $dir) {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($appRoot . '/' . $dir)) as $file) {
-        if ($file->isFile() && $file->getExtension() === 'php') {
+        if ($file->isFile()
+            && $file->getExtension() === 'php'
+            && !str_contains(str_replace('\\', '/', $file->getPathname()), '/lib/vendor/')
+        ) {
             $phpFiles[] = $file->getPathname();
         }
     }

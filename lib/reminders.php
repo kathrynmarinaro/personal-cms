@@ -681,23 +681,47 @@ function reminders_mark_failed(int $reminderId, string $dueDate, string $error):
 /**
  * What happens to a reminder once it has been emailed about. True if it moved.
  *
- * THE ASYMMETRY, IN ONE FUNCTION, SO THERE IS ONE PLACE TO GET IT RIGHT
- * (PLAN.md §7.2, step 3d).
+ * ONE RULE, NOT TWO SPECIAL CASES (PLAN.md §7.2, step 3d):
  *
- * A BIRTHDAY rolls forward to next year's lead date. It has fired, the birthday
- * is coming, and nothing more is expected of you this year.
+ *   THE SEND LEDGER STOPS THE DUPLICATE EMAIL.
+ *   THE DUE DATE DOES NOT MOVE UNTIL THE THING IS ACTUALLY DONE.
  *
- * A REACH-OUT DOES NOT MOVE, and returning false here is not a failure — it is
- * the feature. It stays overdue, the dashboard keeps showing it, and it gets
- * louder as the number of days climbs. reminder_sends is what stops tomorrow's
- * run emailing about it again. Advancing it here would mean the app quietly
- * forgives you for not calling your sister.
+ * A REACH-OUT never moves here. It stays overdue, the dashboard keeps showing
+ * it, and it gets louder as the number of days climbs; what moves it is logging
+ * an actual contact, and nothing else. Returning false is not a failure, it is
+ * the feature — advancing it would mean the app quietly forgives you for not
+ * calling your sister.
  *
- * Next year's date is found by asking birthday_reminder_date() from the day
- * AFTER the birthday itself, not from today: today is the lead date, so asking
- * from here would find the same birthday again and the reminder would never
- * move. The +1 is on the birthday, so a Feb 29 birthday clamped to Feb 28 still
- * lands in the following year rather than on itself.
+ * A BIRTHDAY moves only ONCE THE BIRTHDAY ITSELF HAS PASSED, which is why this
+ * function needs $today at all and why it returns false for most of the days it
+ * is called on.
+ *
+ * THE GUARD IS THE WHOLE POINT OF THIS FUNCTION, and it lives here rather than
+ * in the cron so that every caller inherits it. The email goes out on the LEAD
+ * date — seven days before the birthday by default. Advancing on send therefore
+ * rolled next_due_date a full year forward on the first day of the week you are
+ * supposed to be acting on it, and the birthday vanished from the Today
+ * dashboard for that entire week: one email, then the app behaves as though the
+ * birthday does not exist until next year. That is a bug you would only notice
+ * by missing a birthday.
+ *
+ * Nothing has to move to keep the email from repeating. reminder_sends is keyed
+ * (reminder_id, due_date), and next_due_date is unchanged across the lead week,
+ * so tomorrow's run claims the same pair, finds it delivered, and stays quiet
+ * while the reminder goes on showing (schema.sql). A birthday reminder is
+ * therefore `<= today` for eight days — the lead date through the birthday —
+ * appears on the dashboard for all eight, and emails once.
+ *
+ * The occurrence being waited on is found from the reminder's OWN due date, not
+ * from today: next_birthday() answers "on or after", so asking it from today
+ * would return the same birthday on the lead day and next year's on the day
+ * after, and could never tell the two apart. Asking from the lead date names
+ * the birthday this row was written about, whatever day the cron happens to run.
+ *
+ * Once it HAS passed, next year's lead date comes from birthday_reminder_date()
+ * asked from today — today is already past this year's occurrence, so
+ * next_birthday() inside it finds next year's and subtracts the lead from that.
+ * A Feb 29 birthday clamped to Feb 28 behaves the same way, one year on.
  */
 function reminders_advance_after_send(int $reminderId, string $today): bool
 {
@@ -714,13 +738,16 @@ function reminders_advance_after_send(int $reminderId, string $today): bool
     $month = $person['birth_month'];
     $day   = $person['birth_day'];
 
-    $birthday = crm_parse_date(next_birthday($month, $day, $today));
-    if ($birthday === null) {
+    /* The birthday this row is currently about. */
+    $occurrence = next_birthday($month, $day, $reminder['next_due_date']);
+
+    /* Still ahead of us, or happening today: there is nothing to advance past
+     * yet, and the reminder is still the most useful thing on the dashboard. */
+    if ($today <= $occurrence) {
         return false;
     }
 
-    $after = $birthday->modify('+1 day')->format('Y-m-d');
-    $next  = birthday_reminder_date($month, $day, $after, reminders_lead_days());
+    $next = birthday_reminder_date($month, $day, $today, reminders_lead_days());
 
     q('UPDATE reminders SET next_due_date = ? WHERE id = ?', array($next, $reminderId));
     return true;

@@ -269,11 +269,23 @@ $ro = reminders_set_reach_out($rSam, 60, null, $rToday);   // due 2026-03-02, a 
 
 is_same($ro === null ? '' : $ro['next_due_date'], '2026-03-02', 'a reach-out sits where the cadence put it');
 
-ok(reminders_advance_after_send($bd['id'], '2026-04-08'), 'a BIRTHDAY reminder advances when it has been sent');
+/* Asked on 2026-04-16, the day AFTER the April 15th birthday — not on the lead
+ * date, which is when the email actually goes out.
+ *
+ * These two assertions originally asked on 2026-04-08 and passed, because the
+ * function used to advance the moment it was sent. That was the bug: the email
+ * goes out seven days early, so advancing on send hid the birthday from the
+ * dashboard for the whole week you were meant to act on it. The rule is now the
+ * same one the reach-out follows — the ledger stops the duplicate email, the due
+ * date does not move until the thing is done. See PLAN.md §7.2.
+ *
+ * The lead-week and birthday-day cases, where this must NOT advance, are in
+ * tools/tests-delivery.php beside the fix. */
+ok(reminders_advance_after_send($bd['id'], '2026-04-16'), 'a BIRTHDAY reminder advances once the birthday has PASSED');
 is_same(
     reminders_get($rAlex, REMINDER_BIRTHDAY)['next_due_date'],
     '2027-04-08',
-    'to next year\'s lead date — it has fired, and nothing more is expected this year'
+    'to next year\'s lead date — the birthday is over, and nothing more is expected this year'
 );
 
 is_same(
