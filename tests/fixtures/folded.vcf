@@ -1,0 +1,20 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Priya Raghunathan
+N:Raghunathan;Priya;;;
+ADR;TYPE=HOME:;;Flat 3\, Belvedere House\; rear entrance;Kingston upon Th
+ ames;Greater
+  London;KT1 2AB;United Kingdom
+NOTE:This note is long enough that the exporter folded it in the middle of
+ a word\, and nothing in this app stores a note off a vCard anyway.
+TEL;TYPE=CELL:+44 20 7946 0958
+EMAIL;TYPE=INTERNET:priya@example.co.uk
+BDAY:--04-15
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Tomasz Wój
+	cik
+N:Wójcik;Tomasz;;;
+TEL;TYPE=CELL:+48 22 555 0166
+END:VCARD

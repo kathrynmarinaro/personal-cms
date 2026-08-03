@@ -1,0 +1,19 @@
+This line is not inside any card and belongs to nothing.
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Half A Card
+TEL;TYPE=CELL:+1 555 0201
+BEGIN:VCARD
+VERSION:3.0
+FN:Second Card
+A LINE WITH NO COLON AT ALL
+;;;;
+EMAIL;TYPE=INTERNET:second@example.com
+END:VCARD
+TEL;TYPE=CELL:+1 555 0202
+BEGIN:VCARD
+VERSION:3.0
+FN:Third Card
+
+TEL;TYPE=CELL:+1 555 0203

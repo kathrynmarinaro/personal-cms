@@ -1,0 +1,28 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//iPhone OS 17.4//EN
+N:Chen;Alex;Wei;;
+FN:Alex Chen
+ORG:Meridian Design;
+TITLE:Studio Manager
+TEL;type=WORK;type=VOICE:+1 512 555 0100
+TEL;type=CELL;type=VOICE;type=pref:+1 512 555 0199
+TEL;type=HOME;type=FAX:+1 512 555 0177
+EMAIL;type=INTERNET;type=WORK:alex.chen@meridiandesign.example
+EMAIL;type=INTERNET;type=HOME;type=pref:alex@example.org
+item1.ADR;type=HOME;type=pref:;;1600 Sycamore Ave;Austin;TX;78702;USA
+item1.X-ABADR:us
+BDAY:1991-04-15
+NOTE:Met at the studio open house.
+REV:2026-01-11T18:22:04Z
+UID:8f1b2c9a-1111-4c2f-9a1e-000000000001
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:O'Brien;Ana-Maria;;Dr.;PhD
+FN:Dr. Ana-Maria O'Brien
+TEL:512 555 0142
+EMAIL:ana@example.net
+BDAY;value=date:--0703
+UID:8f1b2c9a-1111-4c2f-9a1e-000000000002
+END:VCARD
