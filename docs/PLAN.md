@@ -574,18 +574,38 @@ $today = crm_today();
      b. If that row already has sent_at IS NOT NULL -> skip, already handled.
      c. Send. On success: sent_at = NOW().
         On failure: leave sent_at NULL, record last_error. Retry tomorrow.
-     d. Birthday reminders: advance next_due_date to next year's lead date.
-        Reach-out reminders: leave next_due_date ALONE.
+     d. Advance next_due_date ONLY when the thing it is about is finished:
+          birthday  -> once the birthday itself has PASSED, roll to next year.
+          reach_out -> never here; only when a contact is logged.
 4. Print a one-line summary; exit non-zero if any send failed.
 ```
 
-**Step 3d is the important asymmetry.** A birthday reminder rolls forward on its
-own — it has fired, the birthday is coming, nothing more is expected of you this
-year. A **reach-out reminder stays overdue until you actually log a reach-out**,
-because that is what "overdue" means: the dashboard must keep showing it, and it
-must not email you again tomorrow (which `reminder_sends` already prevents,
-keyed on the unchanged due date). Advancing it on send would mean the app quietly
-forgives you for not calling your sister.
+**Step 3d is one rule, not two special cases:** *the send ledger stops the
+duplicate email; the due date does not move until the thing is actually done.*
+
+**This is a correction.** An earlier draft of this plan advanced a birthday
+reminder the moment the cron emailed about it. That email goes out **seven days
+before** the birthday — so the birthday would vanish from the Today dashboard for
+the entire week you are supposed to be acting on it. One email, then the app
+behaves as though the birthday does not exist until next year. Caught during
+Phase 2B, before any cron existed to ship it.
+
+Advancing only once the birthday has passed needs no new mechanism.
+`reminder_sends` is keyed `(reminder_id, due_date)`, and `next_due_date` is
+unchanged across that week, so the ledger already refuses a second email. The
+reminder simply stays visible while it is still actionable.
+
+A **reach-out reminder** works the same way and always did: it stays overdue
+until you actually log a reach-out, because that is what "overdue" means.
+Advancing it on send would mean the app quietly forgives you for not calling
+your sister.
+
+Two consequences worth stating, both intended:
+
+- A birthday reminder is `<= today` for eight days (lead date through the
+  birthday), and appears on the dashboard for all eight. It emails once.
+- `reminders_advance_after_send()` therefore needs `$today` to decide, and
+  returns false for a birthday whose day has not yet arrived.
 
 Logging a contact is what moves it: `contact-log.php` sets `last_contact_date`,
 inserts the log row, and recomputes `next_due_date = last_contact_date +
@@ -717,6 +737,12 @@ these go into `CLAUDE.md` when it is written.
   are two conversations, and the cadence clock runs off the date.
 - **A reach-out reminder stays overdue until you log a contact** (§7.2). The
   dashboard is allowed to accumulate. This is the app working, not a bug.
+- **"Logged today" deletes a one-off reminder only if it was already due.** A
+  one-off you deliberately set for two months out survives an unrelated contact
+  log. The looser reading — delete any one-off on any log — means a button whose
+  entire promise is "I talked to them" silently destroys a future reminder, with
+  no undo and nothing on screen to say it happened. Settled in Phase 2B; both
+  behaviours are tested, so changing it is one `if`.
 - **`dup_person_id` never merges anything.** Flag only, per the brief.
 - **No "Add all" on the import queue** (§6.1).
 - **Photos are dropped at parse time, not stored and ignored** (§6.3).
