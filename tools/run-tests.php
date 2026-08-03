@@ -1261,6 +1261,33 @@ ok($shortArray === array(), 'array() long syntax throughout, matching the siblin
 
 ok(count($phpFiles) >= 8, 'the foundation PHP files are all present', count($phpFiles) . ' found');
 
+/* ====================================================== per-track test files */
+
+/* Each Phase 2 track's tests live in their own tools/tests-<track>.php and are
+ * picked up here automatically. Ported from Grocery, whose own comment records
+ * why it exists: appending to the bottom of this file works while tracks are
+ * built strictly one after another, and stops working the moment two are built
+ * at once — every agent's last act is to edit the same handful of lines, so the
+ * second one to finish has a conflict in the one file that proves the app works.
+ *
+ * Phase 2 runs Interaction, Reminders and Import in parallel, so that is not a
+ * hypothetical here.
+ *
+ * Included at global scope, so ok(), is_same(), throws(), section() and $T all
+ * behave exactly as they do inline — a track file is the block of assertions it
+ * always was, in a file of its own. Sorted, so a failure is reported in the same
+ * order on every machine.
+ *
+ * Each file owns its own setup. The sections above leave rows behind, so a track
+ * that needs to start empty must clear its own tables rather than assume
+ * anything about what ran before it. */
+$trackTestFiles = glob($appRoot . '/tools/tests-*.php');
+sort($trackTestFiles);
+
+foreach ($trackTestFiles as $trackTestFile) {
+    require $trackTestFile;
+}
+
 /* ===================================================================== done */
 
 printf("\n\033[1m%d passed, %d failed\033[0m\n", $T['pass'], $T['fail']);
