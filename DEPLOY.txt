@@ -92,10 +92,26 @@ points at, e.g. public_html/crm/ :
 Once daily, early morning. No cron, no reminders — the dashboard still
 works, but only when you open it. Pick ONE:
 
-  4a. COMMAND CRON (better: no HTTP timeout, no token to leak)
-  [ ] php /home/u123456/domains/crm.example.com/public_html/crm/tools/cron-reminders.php
-  [ ] Daily ~06:00 in your configured timezone
-  [ ] Leave 'cron' => 'token' EMPTY, so public/cron.php refuses everything
+  4a. COMMAND CRON — use this one. Hostinger gives you a command field on
+      essentially every plan. No HTTP timeout, no token to leak.
+
+  [ ] Get your absolute path: hPanel -> Files -> File Manager, open the
+      folder you uploaded to, read the breadcrumb. Looks like
+          /home/u481203847/domains/yourdomain.com/public_html/crm
+  [ ] hPanel -> Advanced -> Cron Jobs -> command to run:
+          /usr/bin/php <YOUR PATH>/tools/cron-reminders.php
+  [ ] Schedule: once a day. Hour 6, minute 0 is fine.
+      >> The scheduler runs on SERVER time, often UTC, not your
+         configured timezone. Harmless — the app works out "today" from
+         its own setting — but 06:00 UTC lands at 1am Central. Use 12:00
+         UTC for a ~6-7am Central delivery.
+  [ ] Leave 'cron' => 'token' EMPTY (the default), so public/cron.php
+      refuses everything and there's no second, unwatched way in
+  [ ] TEST IT NOW: set the schedule a few minutes out and wait. Hostinger
+      emails you whatever the job prints, and it exits non-zero if a send
+      failed. With nothing due it reports zero — which still proves the
+      path and the PHP binary. Then set it back to daily.
+      >> A wrong path fails loudly: "No such file or directory".
 
   4b. URL FETCH (plans that only offer a URL)
   [ ] php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;'
